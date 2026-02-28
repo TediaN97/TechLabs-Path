@@ -1,7 +1,12 @@
 import DashboardContainer from "./components/DashboardContainer";
+import SecurityGateway from "./components/SecurityGateway";
 
 function App() {
-  return <DashboardContainer />;
+  return (
+    <SecurityGateway>
+      <DashboardContainer />
+    </SecurityGateway>
+  );
 }
 
 export default App;

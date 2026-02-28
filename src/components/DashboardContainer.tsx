@@ -1,7 +1,7 @@
 import { useAgent } from "../hooks/useAgent";
 import type { Execution, ExportFile } from "../hooks/useAgent";
-import PromptInput from "./PromptInput";
-import DataTable from "./DataTable";
+import ChatInterface from "./ChatInterface";
+import StructuralDataLookup from "./StructuralDataLookup";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 
@@ -59,7 +59,7 @@ function TriggersPanel({ executions }: { executions: Execution[] }) {
       <div className="px-5 py-3.5 border-b border-gray-100">
         <div className="flex items-center gap-2">
           <ClockIcon />
-          <h2 className="text-base font-semibold text-gray-800">Triggers</h2>
+          <h2 className="text-base font-semibold text-gray-800">Trigger</h2>
         </div>
         <p className="mt-1 text-xs text-gray-400">Execution History</p>
       </div>
@@ -175,16 +175,23 @@ export default function DashboardContainer() {
       {/* Grid: left center (Prompt + Data) | right sidebar (Triggers + Exports) */}
       <main className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-          {/* ── Left / Center: Prompt + Data ──────────────────────────────── */}
+          {/* ── Left / Center: Chat + Data ───────────────────────────────── */}
           <div className="flex flex-col gap-6 min-w-0">
-            <PromptInput
-              prompt={agent.prompt}
-              onPromptChange={agent.setPrompt}
-              onRun={agent.processInput}
+            <ChatInterface
+              messages={agent.messages}
+              onSendMessage={agent.sendMessage}
               onFileUpload={agent.handleFileUpload}
               isLoading={agent.isProcessing}
             />
-            <DataTable data={agent.data} isLoading={agent.isProcessing} />
+            <StructuralDataLookup
+              data={agent.data}
+              isLoading={agent.isProcessing}
+              isRefreshing={agent.isRefreshing}
+              lastRefreshed={agent.lastRefreshed}
+              detailMilestone={agent.detailMilestone}
+              onDetailStruct={agent.setDetailMilestone}
+              onDelete={agent.deleteMilestone}
+            />
           </div>
 
           {/* ── Right sidebar: Triggers + Exports stacked ────────────────── */}
