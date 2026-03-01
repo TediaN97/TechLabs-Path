@@ -1,4 +1,4 @@
-import { type FormEvent, useRef, useEffect } from "react";
+import { type FormEvent, useRef, useEffect, useCallback } from "react";
 
 // ── Types ───────────────────────────────────────────────────────────────────────
 
@@ -112,6 +112,11 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   );
 }
 
+// ── Constants ────────────────────────────────────────────────────────────────────
+
+/** Max height in px before the textarea becomes internally scrollable (~7 lines) */
+const TEXTAREA_MAX_HEIGHT = 200;
+
 // ── Component ───────────────────────────────────────────────────────────────────
 
 interface ChatInterfaceProps {
@@ -129,12 +134,25 @@ export default function ChatInterface({
   isLoading,
   isUploading = false,
 }: ChatInterfaceProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputValueRef = useRef("");
 
-  // Auto-scroll to bottom when messages change or loading/uploading state changes
+  // ── Auto-resize textarea to fit content ──────────────────────────────────
+  const resizeTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    // Reset to single-row so scrollHeight recalculates correctly
+    el.style.height = "auto";
+    // Clamp to max height
+    const next = Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT);
+    el.style.height = `${next}px`;
+    // Enable internal scroll once content overflows max height
+    el.style.overflowY = el.scrollHeight > TEXTAREA_MAX_HEIGHT ? "auto" : "hidden";
+  }, []);
+
+  // Auto-scroll chat to bottom when messages change or loading/uploading state changes
   useEffect(() => {
     const el = scrollRef.current;
     if (el) {
@@ -142,13 +160,29 @@ export default function ChatInterface({
     }
   }, [messages, isLoading, isUploading]);
 
+  // ── Submit handler ─────────────────────────────────────────────────────────
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const value = inputValueRef.current.trim();
     if (!value || isLoading || isUploading) return;
     onSendMessage(value);
+    // Clear textarea
     inputValueRef.current = "";
-    if (inputRef.current) inputRef.current.value = "";
+    if (textareaRef.current) {
+      textareaRef.current.value = "";
+      // Reset height back to single line after sending
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.overflowY = "hidden";
+    }
+  }
+
+  // ── Key handler: Enter = send, Shift+Enter = newline ───────────────────────
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+    // Shift+Enter falls through naturally and inserts a newline
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -167,10 +201,10 @@ export default function ChatInterface({
         <p className="text-xs text-gray-400 mt-0.5">Ask questions about your documents</p>
       </div>
 
-      {/* Messages area */}
+      {/* Messages area — flex-1 so it shrinks when the input bar grows */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-5 py-4 bg-gray-50/50"
+        className="flex-1 overflow-y-auto px-5 py-4 bg-gray-50/50 min-h-0"
       >
         {messages.length === 0 && !isLoading && (
           <div className="flex items-center justify-center h-full text-sm text-gray-400">
@@ -186,9 +220,9 @@ export default function ChatInterface({
         {isLoading && <TypingIndicator />}
       </div>
 
-      {/* Input bar */}
+      {/* Input bar — pinned to bottom, grows upward */}
       <div className="border-t border-gray-100 px-4 py-3 flex-shrink-0">
-        <form onSubmit={handleSubmit} className="flex items-center gap-2">
+        <form onSubmit={handleSubmit} className="flex items-end gap-2">
           {/* Hidden file input */}
           <input
             ref={fileRef}
@@ -198,40 +232,37 @@ export default function ChatInterface({
             className="hidden"
           />
 
-          {/* Upload button */}
+          {/* Upload button — pinned to bottom of the row */}
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={isLoading}
-            className="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-shrink-0 p-2 mb-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             title="Upload file"
           >
             <UploadIcon />
           </button>
 
-          {/* Text input */}
-          <input
-            ref={inputRef}
-            type="text"
+          {/* Auto-expanding textarea */}
+          <textarea
+            ref={textareaRef}
+            rows={1}
             placeholder="Type a message…"
             onChange={(e) => {
               inputValueRef.current = e.target.value;
+              resizeTextarea();
             }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                handleSubmit(e);
-              }
-            }}
+            onKeyDown={handleKeyDown}
             disabled={isLoading}
-            className="flex-1 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-full bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 transition-colors disabled:opacity-50"
-            style={{ caretColor: "black" }}
+            className="flex-1 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-2xl bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 transition-colors disabled:opacity-50 resize-none leading-relaxed"
+            style={{ caretColor: "black", overflowY: "hidden" }}
           />
 
-          {/* Send button */}
+          {/* Send button — pinned to bottom of the row */}
           <button
             type="submit"
             disabled={isLoading}
-            className="flex-shrink-0 p-2.5 text-white bg-[#319795] rounded-full hover:bg-[#2C7A7B] active:bg-[#285E61] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-shrink-0 p-2.5 mb-0.5 text-white bg-[#319795] rounded-full hover:bg-[#2C7A7B] active:bg-[#285E61] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             title="Send message"
           >
             <SendIcon />

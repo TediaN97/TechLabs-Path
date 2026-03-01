@@ -113,6 +113,10 @@ const DATA_REFRESH_URL =
 const FILE_UPLOAD_URL =
   "https://20.110.72.120.nip.io/webhook/uploadFile";
 
+/** Production API endpoint for fetching triggers */
+const TRIGGERS_URL =
+  "https://vltechpath.app.n8n.cloud/webhook/triggers";
+
 const REFRESH_INTERVAL_MS = 30_000;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -254,6 +258,60 @@ async function fetchAllDocuments(): Promise<GetAllDocumentsResponse | null> {
   }
 }
 
+// ── Trigger types & fetch ─────────────────────────────────────────────────────
+
+export interface Trigger {
+  id: string;
+  label: string;
+  created_at: string;
+  status: string;
+  last_execution_status: string;
+}
+
+/**
+ * GET the production API to fetch all triggers.
+ * Response shape: { ok: boolean, triggers: { ... } | [ ... ] }
+ * Returns the parsed array on success, or `null` on failure.
+ */
+async function fetchTriggers(): Promise<Trigger[] | null> {
+  try {
+    const res = await fetch(TRIGGERS_URL, { method: "GET" });
+    if (!res.ok) return null;
+    const text = await res.text();
+    if (!text || text.trim().length === 0) return null;
+    const json = JSON.parse(text);
+
+    // Unwrap: API may return { ok, triggers } wrapper or a bare array
+    let raw: Record<string, unknown>[];
+    if (json && typeof json === "object" && !Array.isArray(json) && json.triggers) {
+      const inner = json.triggers;
+      raw = Array.isArray(inner) ? inner : [inner];
+    } else if (Array.isArray(json)) {
+      raw = json;
+    } else {
+      raw = [json];
+    }
+
+    const arr: Trigger[] = raw.map(
+      (t: Record<string, unknown>, idx: number) => ({
+        id: (t.id as string) || String(idx),
+        label: (t.label as string) || "Untitled trigger",
+        created_at: (t.created_at as string) || "",
+        status: (t.status as string) || "unknown",
+        last_execution_status: (t.last_execution_status as string) || "unknown",
+      })
+    );
+    // Sort by created_at descending (most recent first)
+    arr.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    return arr;
+  } catch {
+    return null;
+  }
+}
+
 export function deriveStatus(deadline: string, explicit?: MilestoneStatus): MilestoneStatus {
   if (explicit) return explicit;
   const d = new Date(deadline + "T23:59:59");
@@ -359,9 +417,13 @@ export function useAgent() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [detailMilestone, setDetailMilestone] = useState<Milestone | null>(null);
   const [previewMilestone, setPreviewMilestone] = useState<Milestone | null>(null);
+  const [triggers, setTriggers] = useState<Trigger[]>([]);
+  const [isTriggersLoading, setIsTriggersLoading] = useState(true);
 
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const triggersTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasFetchedOnce = useRef(false);
+  const hasFetchedTriggersOnce = useRef(false);
 
   const logExecution = useCallback((label: string) => {
     setExecutions((prev) => [
@@ -409,6 +471,34 @@ export function useAgent() {
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
     };
   }, [refreshData]);
+
+  // ── refreshTriggers: poll the triggers API ──────────────────────────────
+
+  const refreshTriggers = useCallback(async () => {
+    const isFirst = !hasFetchedTriggersOnce.current;
+    if (isFirst) setIsTriggersLoading(true);
+    try {
+      const res = await fetchTriggers();
+      if (res) setTriggers(res);
+      hasFetchedTriggersOnce.current = true;
+    } catch {
+      // silently retry on next interval
+    } finally {
+      setIsTriggersLoading(false);
+    }
+  }, []);
+
+  // ── Initial triggers fetch + auto-refresh every 30 s ───────────────────
+
+  useEffect(() => {
+    refreshTriggers();
+    triggersTimerRef.current = setInterval(() => {
+      refreshTriggers();
+    }, REFRESH_INTERVAL_MS);
+    return () => {
+      if (triggersTimerRef.current) clearInterval(triggersTimerRef.current);
+    };
+  }, [refreshTriggers]);
 
   // ── sendMessage: POST to n8n AI-agent → parse response → display ─────
 
@@ -601,6 +691,8 @@ export function useAgent() {
     isInitialLoading,
     fetchError,
     lastRefreshed,
+    triggers,
+    isTriggersLoading,
     detailMilestone,
     previewMilestone,
     setDetailMilestone,

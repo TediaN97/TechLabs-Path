@@ -1,5 +1,5 @@
 import { useAgent } from "../hooks/useAgent";
-import type { Execution, ExportFile } from "../hooks/useAgent";
+import type { Trigger, ExportFile } from "../hooks/useAgent";
 import ChatInterface from "./ChatInterface";
 import StructuralDataLookup from "./StructuralDataLookup";
 
@@ -51,33 +51,83 @@ function formatTimestamp(iso: string): string {
   });
 }
 
-// ── Triggers Panel (simple execution history) ──────────────────────────────────
+// ── Trigger helpers ──────────────────────────────────────────────────────────
 
-function TriggersPanel({ executions }: { executions: Execution[] }) {
+function formatTriggerDate(iso: string): string {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "-";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}.${mm}.${yyyy} ${hh}:${min}`;
+}
+
+function triggerStatusColor(status: string, lastExec: string): { dot: string; text: string } {
+  const s = (lastExec || status || "").toLowerCase();
+  if (s === "success" || s === "completed")
+    return { dot: "bg-emerald-500", text: "text-emerald-600" };
+  if (s === "error" || s === "failed")
+    return { dot: "bg-red-500", text: "text-red-600" };
+  return { dot: "bg-gray-400", text: "text-gray-500" };
+}
+
+function triggerStatusLabel(status: string, lastExec: string): string {
+  const s = (lastExec || status || "unknown").toLowerCase();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// ── Triggers Panel (production API) ─────────────────────────────────────────
+
+function TriggersPanel({
+  triggers,
+  isLoading,
+}: {
+  triggers: Trigger[];
+  isLoading: boolean;
+}) {
   return (
     <div className="bg-white shadow-sm rounded-lg">
       <div className="px-5 py-3.5 border-b border-gray-100">
         <div className="flex items-center gap-2">
           <ClockIcon />
-          <h2 className="text-base font-semibold text-gray-800">Trigger</h2>
+          <h2 className="text-base font-semibold text-gray-800">Triggers</h2>
         </div>
-        <p className="mt-1 text-xs text-gray-400">Execution History</p>
+        <p className="mt-1 text-xs text-gray-400">Automated workflows</p>
       </div>
 
-      {executions.length === 0 ? (
+      {isLoading ? (
+        <div className="px-5 py-8 flex items-center justify-center gap-2 text-sm text-gray-400">
+          <SpinnerIcon className="h-3.5 w-3.5" />
+          Loading triggers…
+        </div>
+      ) : triggers.length === 0 ? (
         <div className="px-5 py-8 text-center text-sm text-gray-400">
-          No executions yet.
+          No triggers found.
         </div>
       ) : (
-        <ul className="divide-y divide-gray-50 max-h-64 overflow-y-auto">
-          {executions.map((ex) => (
-            <li key={ex.id} className="px-5 py-2.5">
-              <p className="text-sm text-gray-700 truncate">{ex.label}</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">
-                Executed: {formatTimestamp(ex.executed_at)}
-              </p>
-            </li>
-          ))}
+        <ul className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
+          {triggers.map((t) => {
+            const color = triggerStatusColor(t.status, t.last_execution_status);
+            return (
+              <li key={t.id} className="px-5 py-3">
+                <p className="text-sm text-gray-700 leading-snug">{t.label}</p>
+                <div className="flex items-center gap-3 mt-1.5">
+                  <span className="text-[11px] text-gray-400">
+                    {formatTriggerDate(t.created_at)}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${color.dot}`} />
+                    <span className={`text-[11px] font-medium ${color.text}`}>
+                      {triggerStatusLabel(t.status, t.last_execution_status)}
+                    </span>
+                  </span>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -198,7 +248,10 @@ export default function DashboardContainer() {
 
           {/* ── Right sidebar: Triggers + Exports stacked ────────────────── */}
           <div className="flex flex-col gap-6">
-            <TriggersPanel executions={agent.executions} />
+            <TriggersPanel
+              triggers={agent.triggers}
+              isLoading={agent.isTriggersLoading}
+            />
             <ExportsPanel
               exportFiles={agent.exports}
               isExporting={agent.isExporting}
