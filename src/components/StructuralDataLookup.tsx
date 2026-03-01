@@ -1,5 +1,5 @@
 import { Fragment, useState, useMemo, useEffect } from "react";
-import type { Milestone, MilestoneStatus } from "../hooks/useAgent";
+import type { Milestone } from "../hooks/useAgent";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 
@@ -98,29 +98,37 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
+function formatUploadDate(iso: string): string {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "-";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}.${mm}.${yyyy} ${hh}:${min}`;
+}
+
 function formatTime(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-const STATUS_STYLES: Record<MilestoneStatus, string> = {
-  done: "bg-green-100 text-green-700",
-  overdue: "bg-red-100 text-red-700",
-  pending: "bg-gray-100 text-gray-600",
-};
+function getStatusStyle(raw: string): string {
+  const s = raw.toLowerCase();
+  if (s === "vectorized") return "bg-teal-100 text-teal-700 border border-teal-200";
+  if (s === "error" || s === "failed") return "bg-red-100 text-red-700 border border-red-200";
+  if (s === "processing" || s === "uploading") return "bg-blue-100 text-blue-700 border border-blue-200";
+  return "bg-gray-100 text-gray-600 border border-gray-200";
+}
 
-const STATUS_LABELS: Record<MilestoneStatus, string> = {
-  done: "Done",
-  overdue: "Overdue",
-  pending: "Pending",
-};
-
-function StatusBadge({ status }: { status: MilestoneStatus }) {
+function StatusBadge({ rawStatus }: { rawStatus: string }) {
   return (
     <span
-      className={`inline-block px-2 py-0.5 text-[11px] font-semibold rounded-full ${STATUS_STYLES[status]}`}
+      className={`inline-block px-2 py-0.5 text-[11px] font-medium rounded-full whitespace-nowrap ${getStatusStyle(rawStatus)}`}
     >
-      {STATUS_LABELS[status]}
+      {rawStatus}
     </span>
   );
 }
@@ -130,9 +138,10 @@ function StatusBadge({ status }: { status: MilestoneStatus }) {
 function SkeletonRow() {
   return (
     <tr className="animate-pulse">
-      <td className="px-4 py-3"><div className="h-4 w-20 bg-gray-200 rounded" /></td>
-      <td className="px-4 py-3"><div className="h-4 w-40 bg-gray-200 rounded" /></td>
       <td className="px-4 py-3"><div className="h-4 w-28 bg-gray-200 rounded" /></td>
+      <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td>
+      <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td>
+      <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td>
       <td className="px-4 py-3"><div className="h-4 w-14 bg-gray-200 rounded" /></td>
       <td className="px-4 py-3"><div className="h-4 w-28 bg-gray-200 rounded ml-auto" /></td>
     </tr>
@@ -176,30 +185,36 @@ function ModalShell({
 function DetailPanel({ milestone, onClose }: { milestone: Milestone; onClose: () => void }) {
   return (
     <ModalShell title="Record Detail" onClose={onClose}>
-      <div className="grid grid-cols-2 gap-4 text-xs">
+      <div className="space-y-4 text-xs">
         <div>
-          <span className="font-semibold text-gray-500 uppercase tracking-wider">ID</span>
-          <p className="mt-1 text-gray-700 font-mono text-[11px] break-all">{milestone.id}</p>
+          <span className="font-semibold text-gray-500 uppercase tracking-wider">Document ID</span>
+          <p className="mt-1 text-gray-700 font-mono text-[11px] break-all">{milestone.document_id || milestone.id}</p>
         </div>
         <div>
-          <span className="font-semibold text-gray-500 uppercase tracking-wider">Deadline</span>
-          <p className="mt-1 text-gray-700">{formatDate(milestone.deadline_date)}</p>
+          <span className="font-semibold text-gray-500 uppercase tracking-wider">File Name</span>
+          <p className="mt-1 text-gray-700">{milestone.file_name}</p>
         </div>
         <div>
-          <span className="font-semibold text-gray-500 uppercase tracking-wider">Task</span>
-          <p className="mt-1 text-gray-700">{milestone.milestone_name}</p>
+          <span className="font-semibold text-gray-500 uppercase tracking-wider">Description</span>
+          <p className="mt-1 text-gray-700 leading-relaxed">{milestone.description}</p>
         </div>
-        <div>
-          <span className="font-semibold text-gray-500 uppercase tracking-wider">Document Ref</span>
-          <p className="mt-1 text-gray-700">{milestone.document_ref}</p>
-        </div>
-        <div>
-          <span className="font-semibold text-gray-500 uppercase tracking-wider">Context</span>
-          <p className="mt-1 text-gray-700">{milestone.context}</p>
-        </div>
-        <div>
-          <span className="font-semibold text-gray-500 uppercase tracking-wider">Status</span>
-          <p className="mt-1"><StatusBadge status={milestone.status} /></p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <span className="font-semibold text-gray-500 uppercase tracking-wider">Upload Date</span>
+            <p className="mt-1 text-gray-700">{formatUploadDate(milestone.upload_time)}</p>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-500 uppercase tracking-wider">Status</span>
+            <p className="mt-1"><StatusBadge rawStatus={milestone.raw_status} /></p>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-500 uppercase tracking-wider">Lender</span>
+            <p className="mt-1 text-gray-700">{milestone.lender}</p>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-500 uppercase tracking-wider">Borrower</span>
+            <p className="mt-1 text-gray-700">{milestone.borrower}</p>
+          </div>
         </div>
       </div>
     </ModalShell>
@@ -219,31 +234,31 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
       <div className="space-y-3">
         <div className="bg-gray-50 rounded-md p-4 border border-gray-100">
           <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">Timeline Vector</p>
-          <p className="text-sm font-medium text-gray-800">{milestone.milestone_name}</p>
+          <p className="text-sm font-medium text-gray-800 truncate" title={milestone.file_name}>{milestone.file_name}</p>
           <div className="mt-3 flex items-center gap-3">
             <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full ${isPast ? "bg-red-400" : milestone.status === "done" ? "bg-green-400" : "bg-[#319795]"}`}
-                style={{ width: isPast || milestone.status === "done" ? "100%" : `${Math.max(10, 100 - Math.min(100, diffDays))}%` }}
+                className={`h-full rounded-full ${isPast ? "bg-red-400" : milestone.raw_status === "vectorized" ? "bg-green-400" : "bg-[#319795]"}`}
+                style={{ width: isPast || milestone.raw_status === "vectorized" ? "100%" : `${Math.max(10, 100 - Math.min(100, diffDays))}%` }}
               />
             </div>
             <span className={`text-xs font-semibold ${isPast ? "text-red-500" : "text-gray-600"}`}>
-              {isPast ? `${Math.abs(diffDays)}d overdue` : milestone.status === "done" ? "Complete" : `${diffDays}d remaining`}
+              {isPast ? `${Math.abs(diffDays)}d overdue` : milestone.raw_status === "vectorized" ? "Complete" : `${diffDays}d remaining`}
             </span>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3 text-xs">
           <div className="bg-gray-50 rounded-md p-3 border border-gray-100 text-center">
-            <p className="text-gray-400 uppercase tracking-wider font-semibold">Start</p>
-            <p className="mt-1 text-gray-700 font-medium">Contract Date</p>
+            <p className="text-gray-400 uppercase tracking-wider font-semibold">Uploaded</p>
+            <p className="mt-1 text-gray-700 font-medium">{formatUploadDate(milestone.upload_time)}</p>
           </div>
           <div className="bg-gray-50 rounded-md p-3 border border-gray-100 text-center">
-            <p className="text-gray-400 uppercase tracking-wider font-semibold">Deadline</p>
-            <p className="mt-1 text-gray-700 font-medium">{formatDate(milestone.deadline_date)}</p>
+            <p className="text-gray-400 uppercase tracking-wider font-semibold">Lender</p>
+            <p className="mt-1 text-gray-700 font-medium truncate" title={milestone.lender}>{milestone.lender}</p>
           </div>
           <div className="bg-gray-50 rounded-md p-3 border border-gray-100 text-center">
             <p className="text-gray-400 uppercase tracking-wider font-semibold">Status</p>
-            <p className="mt-1"><StatusBadge status={milestone.status} /></p>
+            <p className="mt-1"><StatusBadge rawStatus={milestone.raw_status} /></p>
           </div>
         </div>
       </div>
@@ -261,31 +276,36 @@ function ImportantInfoPanel({ milestone, onClose }: { milestone: Milestone; onCl
           <div className="flex items-start gap-2">
             <AlertCircleIcon />
             <div>
-              <p className="text-xs font-semibold text-amber-800">Key Contractual Clause</p>
+              <p className="text-xs font-semibold text-amber-800">Key Document Information</p>
               <p className="text-xs text-amber-700 mt-1">
-                This obligation is defined in <span className="font-semibold">{milestone.document_ref}</span> under
-                the <span className="font-semibold">{milestone.context}</span> agreement.
+                Document <span className="font-semibold">{milestone.file_name}</span> involves
+                lender <span className="font-semibold">{milestone.lender}</span> and
+                borrower <span className="font-semibold">{milestone.borrower}</span>.
               </p>
             </div>
           </div>
         </div>
         <div className="bg-gray-50 rounded-md p-4 border border-gray-100 text-xs space-y-2">
           <div className="flex justify-between">
-            <span className="text-gray-500 font-semibold">Milestone</span>
-            <span className="text-gray-700">{milestone.milestone_name}</span>
+            <span className="text-gray-500 font-semibold">Lender</span>
+            <span className="text-gray-700 text-right max-w-[60%] truncate" title={milestone.lender}>{milestone.lender}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-500 font-semibold">Deadline</span>
-            <span className="text-gray-700">{formatDate(milestone.deadline_date)}</span>
+            <span className="text-gray-500 font-semibold">Borrower</span>
+            <span className="text-gray-700 text-right max-w-[60%] truncate" title={milestone.borrower}>{milestone.borrower}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-500 font-semibold">Compliance Status</span>
-            <StatusBadge status={milestone.status} />
+            <span className="text-gray-500 font-semibold">Upload Date</span>
+            <span className="text-gray-700">{formatUploadDate(milestone.upload_time)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500 font-semibold">Status</span>
+            <StatusBadge rawStatus={milestone.raw_status} />
           </div>
         </div>
-        {milestone.status === "overdue" && (
+        {(milestone.raw_status === "error" || milestone.raw_status === "failed") && (
           <div className="bg-red-50 border border-red-200 rounded-md p-3 text-xs text-red-700">
-            This milestone is past due. Review the agreement for penalty clauses or cure periods.
+            This document has an error status. Review the processing pipeline for issues.
           </div>
         )}
       </div>
@@ -300,15 +320,16 @@ function AiDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClos
   const today = new Date();
   const diffDays = Math.round((deadline.getTime() - today.getTime()) / 86400000);
 
+  const rawLower = milestone.raw_status.toLowerCase();
   let riskLevel: "Low" | "Medium" | "High";
   let riskColor: string;
-  if (milestone.status === "done") {
+  if (rawLower === "vectorized") {
     riskLevel = "Low";
     riskColor = "text-green-600 bg-green-50 border-green-200";
-  } else if (milestone.status === "overdue" || diffDays < 0) {
+  } else if (rawLower === "error" || rawLower === "failed" || diffDays < 0) {
     riskLevel = "High";
     riskColor = "text-red-600 bg-red-50 border-red-200";
-  } else if (diffDays <= 90) {
+  } else if (rawLower === "processing" || rawLower === "uploading") {
     riskLevel = "Medium";
     riskColor = "text-amber-600 bg-amber-50 border-amber-200";
   } else {
@@ -327,31 +348,31 @@ function AiDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClos
           <p className="font-semibold text-sm">Risk Level: {riskLevel}</p>
           <p className="mt-1">
             {riskLevel === "High"
-              ? "This deadline requires immediate attention. Consider escalating to stakeholders and reviewing remediation options."
+              ? "This document requires immediate attention. Review processing errors and consider re-uploading."
               : riskLevel === "Medium"
-                ? "This deadline is approaching. Ensure all prerequisites are in progress and allocate resources accordingly."
-                : milestone.status === "done"
-                  ? "This milestone has been completed successfully. No further action required."
-                  : "This deadline has sufficient lead time. Monitor periodically during the next refresh cycle."}
+                ? "This document is currently being processed. Monitor progress and ensure pipeline completion."
+                : rawLower === "vectorized"
+                  ? "This document has been successfully vectorized. No further action required."
+                  : "This document status is nominal. Monitor periodically during the next refresh cycle."}
           </p>
         </div>
         <div className="bg-gray-50 rounded-md p-4 border border-gray-100 text-xs space-y-2">
           <p className="font-semibold text-gray-600">Suggestions</p>
           <ul className="list-disc list-inside text-gray-600 space-y-1">
-            {milestone.status === "overdue" ? (
+            {riskLevel === "High" ? (
               <>
-                <li>Review cure period provisions in {milestone.document_ref}</li>
-                <li>Notify compliance team of breach risk</li>
-                <li>Prepare status report for lender review</li>
+                <li>Review processing errors for {milestone.file_name}</li>
+                <li>Notify compliance team of document issue</li>
+                <li>Prepare status report for {milestone.lender !== "-" ? milestone.lender : "lender"} review</li>
               </>
-            ) : milestone.status === "done" ? (
+            ) : rawLower === "vectorized" ? (
               <>
                 <li>Archive completion documentation</li>
                 <li>Update compliance dashboard</li>
               </>
             ) : (
               <>
-                <li>Set reminder {diffDays > 30 ? "30" : "7"} days before deadline</li>
+                <li>Monitor document processing pipeline</li>
                 <li>Verify deliverables checklist is current</li>
                 <li>Confirm responsible party assignment</li>
               </>
@@ -372,6 +393,7 @@ interface StructuralDataLookupProps {
   isLoading: boolean;
   isRefreshing: boolean;
   lastRefreshed: string;
+  fetchError: string | null;
   detailMilestone: Milestone | null;
   onDetailStruct: (m: Milestone | null) => void;
   onDelete: (id: string) => void;
@@ -382,6 +404,7 @@ export default function StructuralDataLookup({
   isLoading,
   isRefreshing,
   lastRefreshed,
+  fetchError,
   detailMilestone,
   onDetailStruct,
   onDelete,
@@ -393,17 +416,27 @@ export default function StructuralDataLookup({
   const [aiMilestone, setAiMilestone] = useState<Milestone | null>(null);
 
   const filtered = useMemo(() => {
-    if (!filterText.trim()) return data;
+  // 1. Filtrovanie dát
+  let result = data;
+  
+  if (filterText.trim()) {
     const q = filterText.toLowerCase();
-    return data.filter(
+    result = data.filter(
       (m) =>
-        m.milestone_name.toLowerCase().includes(q) ||
-        m.document_ref.toLowerCase().includes(q) ||
-        m.context.toLowerCase().includes(q) ||
-        m.status.includes(q) ||
-        m.deadline_date.includes(q)
+        m.file_name.toLowerCase().includes(q) ||
+        (m.lender && m.lender.toLowerCase().includes(q)) ||
+        (m.borrower && m.borrower.toLowerCase().includes(q)) ||
+        (m.status && m.status.toLowerCase().includes(q)) ||
+        formatUploadDate(m.upload_time).includes(q)
     );
-  }, [data, filterText]);
+  }
+
+  // 2. Zoradenie podľa upload_time (od najnovšieho po najstaršie)
+  return [...result].sort((a, b) => {
+    return new Date(b.upload_time).getTime() - new Date(a.upload_time).getTime();
+  });
+
+}, [data, filterText]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / RECORDS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
@@ -455,24 +488,48 @@ export default function StructuralDataLookup({
           </div>
         </div>
 
+        {/* Error banner */}
+        {fetchError && !isLoading && (
+          <div className="mx-5 mt-3 flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-4 py-2.5 text-xs text-amber-700">
+            <svg className="h-4 w-4 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {fetchError}
+          </div>
+        )}
+
+        {/* Loading spinner overlay for initial fetch */}
+        {isLoading && data.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <svg className="h-8 w-8 animate-spin text-[#319795]" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-sm text-gray-400">Loading documents...</span>
+          </div>
+        )}
+
         {/* Table — 5 columns (wider Actions) */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" style={{ display: isLoading && data.length === 0 ? "none" : undefined }}>
           <table className="w-full text-sm table-fixed">
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="w-[11%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Deadline
+                <th className="w-[22%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Name
                 </th>
-                <th className="w-[25%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Description
+                <th className="w-[12%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Upload Date
                 </th>
-                <th className="w-[20%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Agreement / Context
+                <th className="w-[16%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Lender
+                </th>
+                <th className="w-[16%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Borrower
                 </th>
                 <th className="w-[8%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="w-[36%] px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th className="w-[26%] px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -486,7 +543,7 @@ export default function StructuralDataLookup({
                 </>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-gray-400">
+                  <td colSpan={6} className="px-5 py-10 text-center text-gray-400">
                     No matching records found.
                   </td>
                 </tr>
@@ -494,17 +551,20 @@ export default function StructuralDataLookup({
                 paginatedData.map((entry) => (
                   <Fragment key={entry.id}>
                     <tr className="hover:bg-gray-50/60 transition-colors">
-                      <td className="px-4 py-3 text-gray-700 font-medium truncate">
-                        {formatDate(entry.deadline_date)}
+                      <td className="px-4 py-3 text-gray-700 font-medium truncate" title={entry.file_name}>
+                        {entry.file_name}
                       </td>
                       <td className="px-4 py-3 text-gray-600 truncate">
-                        {entry.milestone_name}
+                        {formatUploadDate(entry.upload_time)}
                       </td>
-                      <td className="px-4 py-3 text-gray-500 truncate">
-                        {entry.context}
+                      <td className="px-4 py-3 text-gray-600 truncate" title={entry.lender}>
+                        {entry.lender}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 truncate" title={entry.borrower}>
+                        {entry.borrower}
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={entry.status} />
+                        <StatusBadge rawStatus={entry.raw_status} />
                       </td>
                       <td className="px-4 py-2">
                         <div className="flex items-center justify-end gap-0.5">
@@ -520,7 +580,7 @@ export default function StructuralDataLookup({
                           <ActionBtn label="AI Deadlines" onClick={() => setAiMilestone(entry)}>
                             <SparklesIcon />
                           </ActionBtn>
-                          <ActionBtn label="Delete" onClick={() => onDelete(entry.id)} variant="danger">
+                          <ActionBtn label="Delete" onClick={() => onDelete(entry.document_id || entry.id)} variant="danger">
                             <Trash2Icon />
                           </ActionBtn>
                         </div>

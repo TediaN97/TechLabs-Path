@@ -148,7 +148,7 @@ function ExportsPanel({
 
 export default function DashboardContainer() {
   const agent = useAgent();
-  const isLoading = agent.isProcessing || agent.isExporting;
+  const isLoading = agent.isProcessing || agent.isExporting || agent.isUploading;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -182,12 +182,14 @@ export default function DashboardContainer() {
               onSendMessage={agent.sendMessage}
               onFileUpload={agent.handleFileUpload}
               isLoading={agent.isProcessing}
+              isUploading={agent.isUploading}
             />
             <StructuralDataLookup
               data={agent.data}
-              isLoading={agent.isProcessing}
+              isLoading={agent.isInitialLoading}
               isRefreshing={agent.isRefreshing}
               lastRefreshed={agent.lastRefreshed}
+              fetchError={agent.fetchError}
               detailMilestone={agent.detailMilestone}
               onDetailStruct={agent.setDetailMilestone}
               onDelete={agent.deleteMilestone}

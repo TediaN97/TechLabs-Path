@@ -5,6 +5,11 @@ import type { ChatMessage } from "../components/ChatInterface";
 
 export type MilestoneStatus = "done" | "overdue" | "pending";
 
+export interface ContractingParty {
+  name: string;
+  role: string;
+}
+
 export interface Milestone {
   id: string;
   deadline_date: string;
@@ -12,6 +17,14 @@ export interface Milestone {
   document_ref: string;
   context: string;
   status: MilestoneStatus;
+  raw_status: string;
+  document_id?: string;
+  contracting_parties?: ContractingParty[];
+  file_name: string;
+  upload_time: string;
+  description: string;
+  lender: string;
+  borrower: string;
 }
 
 export interface Execution {
@@ -28,116 +41,77 @@ export interface ExportFile {
   blob_url: string;
 }
 
-// ── Mock Data ──────────────────────────────────────────────────────────────────
+// ── API response types ─────────────────────────────────────────────────────────
 
-const INITIAL_MILESTONES: Milestone[] = [
-  {
-    id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    deadline_date: "2019-09-30",
-    milestone_name: "Construction Commencement",
-    document_ref: "Loan Agreement, Section 2.1",
-    context: "Bridger Solutions - Construction Loan",
-    status: "done",
-  },
-  {
-    id: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-    deadline_date: "2020-07-01",
-    milestone_name: "Substantial Completion of Project",
-    document_ref: "Loan Agreement, Section 5.3",
-    context: "Bridger Solutions - Construction Loan",
-    status: "overdue",
-  },
-  {
-    id: "c3d4e5f6-a7b8-9012-cdef-123456789012",
-    deadline_date: "2020-12-31",
-    milestone_name: "Maintain Debt Service Coverage Ratio (1.25 to 1.00)",
-    document_ref: "Loan Agreement, Section 7.2",
-    context: "Bridger Solutions - Construction Loan",
-    status: "overdue",
-  },
-  {
-    id: "d4e5f6a7-b8c9-0123-defa-234567890123",
-    deadline_date: "2026-04-30",
-    milestone_name: "Deliver Audited Financial Statements (120 days post-year end)",
-    document_ref: "Loan Agreement, Section 6.1",
-    context: "Bridger Solutions - Construction Loan",
-    status: "pending",
-  },
-  {
-    id: "e5f6a7b8-c9d0-1234-efab-345678901234",
-    deadline_date: "2025-06-15",
-    milestone_name: "Hangar structural inspection",
-    document_ref: "Exhibit A, Section 3.4",
-    context: "Hangar Remodel Project",
-    status: "pending",
-  },
-  {
-    id: "f6a7b8c9-d0e1-2345-fabc-456789012345",
-    deadline_date: "2025-09-01",
-    milestone_name: "Fire suppression system installation",
-    document_ref: "Exhibit B, Section 8.1",
-    context: "Hangar Remodel Project",
-    status: "pending",
-  },
-  {
-    id: "f6a7b8c9-d0e1-2345-fabc-456789012344",
-    deadline_date: "2025-09-01",
-    milestone_name: "Fire suppression system installation",
-    document_ref: "Exhibit B, Section 8.1",
-    context: "Hangar Remodel Project",
-    status: "pending",
-  },
-  {
-    id: "f6a7b8c9-d0e1-2345-fabc-456789012342",
-    deadline_date: "2025-09-01",
-    milestone_name: "Fire suppression system installation",
-    document_ref: "Exhibit B, Section 8.1",
-    context: "Hangar Remodel Project",
-    status: "pending",
-  },
-  {
-    id: "f6a7b8c9-d0e1-2345-fabc-456789012348",
-    deadline_date: "2025-09-01",
-    milestone_name: "Fire suppression system installation",
-    document_ref: "Exhibit B, Section 8.1",
-    context: "Hangar Remodel Project",
-    status: "pending",
-  },
-  {
-    id: "f6a7b8c9-d0e1-2345-fabc-456789012349",
-    deadline_date: "2025-09-01",
-    milestone_name: "Fire suppression system installation",
-    document_ref: "Exhibit B, Section 8.1",
-    context: "Hangar Remodel Project",
-    status: "pending",
-  },
-  {
-    id: "f6a7b8c9-d0e1-2345-fabc-456789012347",
-    deadline_date: "2025-09-01",
-    milestone_name: "Fire suppression system installation",
-    document_ref: "Exhibit B, Section 8.1",
-    context: "Hangar Remodel Project",
-    status: "pending",
-  },
-  {
-    id: "f6a7b8c9-d0e1-2345-fabc-456789012346",
-    deadline_date: "2025-09-01",
-    milestone_name: "Fire suppression system installation",
-    document_ref: "Exhibit B, Section 8.1",
-    context: "Hangar Remodel Project",
-    status: "pending",
-  },
-];
+interface ApiDocument {
+  document_id: string;
+  file_name: string;
+  description: string;
+  upload_time: string;
+  status: string;
+  contracting_parties?: { name: string; role: string }[];
+}
+
+interface GetAllDocumentsResponse {
+  documents: ApiDocument[];
+  total: number;
+}
+
+function mapApiStatus(status: string): MilestoneStatus {
+  if (status === "vectorized") return "done";
+  if (status === "error" || status === "failed") return "overdue";
+  return "pending";
+}
+
+function extractPartyName(
+  parties: { name: string; role: string }[] | undefined,
+  ...roles: string[]
+): string {
+  if (!parties?.length) return "-";
+  const lowerRoles = roles.map((r) => r.toLowerCase());
+  const match = parties.find((p) => lowerRoles.includes(p.role.toLowerCase()));
+  return match?.name || "-";
+}
+
+function mapDocumentToMilestone(doc: ApiDocument): Milestone {
+  const uploadDate = new Date(doc.upload_time);
+  const deadlineDate = isNaN(uploadDate.getTime())
+    ? new Date().toISOString().slice(0, 10)
+    : uploadDate.toISOString().slice(0, 10);
+
+  const parties = doc.contracting_parties ?? [];
+
+  return {
+    id: doc.document_id,
+    deadline_date: deadlineDate,
+    milestone_name: doc.description || "No description",
+    document_ref: doc.file_name || "—",
+    context: doc.file_name || "—",
+    status: mapApiStatus(doc.status),
+    raw_status: doc.status || "unknown",
+    document_id: doc.document_id,
+    contracting_parties: parties,
+    file_name: doc.file_name || "—",
+    upload_time: doc.upload_time || "",
+    description: doc.description || "No description",
+    lender: extractPartyName(parties, "Lender", "Agent and Lender"),
+    borrower: extractPartyName(parties, "Borrower"),
+  };
+}
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-/** Replace with your actual n8n webhook URL */
-const N8N_WEBHOOK_URL =
-  "https://your-n8n-instance.com/webhook/prompt-dashboard";
+/** n8n AI-agent chat webhook */
+const N8N_CHAT_URL =
+  "https://vltechpath.app.n8n.cloud/webhook/chat";
 
-/** Replace with your actual data-refresh endpoint (n8n / Supabase) */
+/** Production API endpoint for fetching all documents */
 const DATA_REFRESH_URL =
-  "https://your-n8n-instance.com/webhook/data-refresh";
+  "https://20.110.72.120.nip.io/webhook/getAllDocuments";
+
+/** Production API endpoint for uploading files */
+const FILE_UPLOAD_URL =
+  "https://20.110.72.120.nip.io/webhook/uploadFile";
 
 const REFRESH_INTERVAL_MS = 30_000;
 
@@ -155,83 +129,129 @@ function simulateApi<T>(result: T, delayMs = 800): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(result), delayMs));
 }
 
-// ── Webhook ───────────────────────────────────────────────────────────────────
+// ── Session management ────────────────────────────────────────────────────────
 
-interface ChatWebhookPayload {
-  message: string;
-  chat_history: { role: string; content: string }[];
-  context: string;
-  timestamp: string;
-  file_metadata?: { name: string; size: number; type: string } | null;
-  files?: { name: string; size: number; type: string; content: string }[] | null;
-}
+const SESSION_STORAGE_KEY = "techpath_session_id";
 
-interface WebhookResponse {
-  reply?: string;
-  milestones?: {
-    deadline_date?: string;
-    milestone_name?: string;
-    document_ref?: string;
-    context?: string;
-    status?: string;
-  }[];
-  [key: string]: unknown;
-}
-
-/**
- * POST to the n8n webhook. Returns the parsed response on success,
- * or `null` on any network / parse failure so callers can fall back
- * to local processing.
- */
-async function sendChatWebhook(
-  payload: ChatWebhookPayload
-): Promise<WebhookResponse | null> {
-  try {
-    const res = await fetch(N8N_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as WebhookResponse;
-  } catch {
-    // Network error — caller will fall back to local logic
-    return null;
+function getOrCreateSessionId(): string {
+  let sessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
   }
+  return sessionId;
 }
 
+// ── n8n Chat webhook ─────────────────────────────────────────────────────────
+
 /**
- * GET/POST to the data-refresh endpoint to fetch the latest milestones.
- * Returns milestones array on success, or `null` on failure.
+ * POST to the n8n AI-agent chat webhook.
+ * Sends { session_id, message } and returns the raw JSON response.
  */
-async function fetchLatestData(): Promise<WebhookResponse | null> {
+async function sendChatMessage(
+  message: string
+): Promise<unknown[] | null> {
   try {
-    const res = await fetch(DATA_REFRESH_URL, {
+    const sessionId = getOrCreateSessionId();
+    const res = await fetch(N8N_CHAT_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        action: "refresh",
-        context: "Bridger Solutions Loan Agreement",
-        timestamp: new Date().toISOString(),
+        action: "sendMessage",
+        session_id: sessionId,
+        sessionId,
+        message,
+        chatInput: message,
       }),
     });
-    if (!res.ok) return null;
-    return (await res.json()) as WebhookResponse;
+    if (!res.ok) {
+      console.warn("[Chat] n8n returned HTTP", res.status);
+      return null;
+    }
+    // Read body as text first to handle empty responses
+    const text = await res.text();
+    if (!text || text.trim().length === 0) {
+      console.warn("[Chat] n8n returned empty body (200 OK). Check that the workflow has a 'Respond to Webhook' node sending data back.");
+      return null;
+    }
+    const json = JSON.parse(text);
+    console.log("[Chat] n8n response:", json);
+    // The API returns an array
+    return Array.isArray(json) ? json : [json];
+  } catch (err) {
+    console.error("[Chat] request failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Extract the last assistant message from the n8n chat response.
+ *
+ * Response shape: an array whose first element has a stringified `history`
+ * field containing a JSON array of { role, content } objects.
+ *
+ * We parse that history string, walk it backwards to find the last
+ * entry with role === "assistant", and return only its content.
+ */
+function extractAssistantReply(responseArray: unknown[]): string | null {
+  try {
+    if (!responseArray.length) return null;
+
+    const first = responseArray[0] as Record<string, unknown>;
+    const historyRaw = first?.history;
+
+    // history may already be an array or a stringified JSON array
+    let history: { role: string; content: string }[];
+    if (typeof historyRaw === "string") {
+      history = JSON.parse(historyRaw);
+    } else if (Array.isArray(historyRaw)) {
+      history = historyRaw as { role: string; content: string }[];
+    } else {
+      // Fallback: check if there's a direct "output" or "reply" field
+      const fallback = first?.output ?? first?.reply ?? first?.text;
+      return typeof fallback === "string" ? fallback : null;
+    }
+
+    if (!Array.isArray(history) || history.length === 0) return null;
+
+    // Walk backwards to find the last assistant message
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].role === "assistant" && history[i].content) {
+        return history[i].content;
+      }
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result.split(",")[1] ?? "");
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+/**
+ * Detect if the assistant's reply indicates a data change that
+ * should trigger a table refresh.
+ */
+function replyIndicatesDataChange(text: string): boolean {
+  const lower = text.toLowerCase();
+  const triggers = [
+    "uploaded", "deleted", "removed", "created", "updated",
+    "modified", "added", "saved", "processed", "imported",
+    "sent", "executed",
+  ];
+  return triggers.some((t) => lower.includes(t));
+}
+
+/**
+ * GET the production API to fetch all documents.
+ * Returns the parsed response on success, or `null` on failure.
+ */
+async function fetchAllDocuments(): Promise<GetAllDocumentsResponse | null> {
+  try {
+    const res = await fetch(DATA_REFRESH_URL, { method: "GET" });
+    if (!res.ok) return null;
+    return (await res.json()) as GetAllDocumentsResponse;
+  } catch {
+    return null;
+  }
 }
 
 export function deriveStatus(deadline: string, explicit?: MilestoneStatus): MilestoneStatus {
@@ -267,6 +287,12 @@ export function parseHtmlTable(html: string): Milestone[] {
       document_ref: t[2] || "—",
       context: t[3] || "Imported",
       status,
+      raw_status: statusRaw || status,
+      file_name: t[2] || "—",
+      upload_time: deadline,
+      description: t[1] || `Row ${i}`,
+      lender: "-",
+      borrower: "-",
     });
   }
   return milestones;
@@ -295,6 +321,12 @@ export function parseCsvText(csv: string): Milestone[] {
       document_ref: cells[2] || "—",
       context: cells[3] || "Imported",
       status,
+      raw_status: statusRaw || status,
+      file_name: cells[2] || "—",
+      upload_time: deadline,
+      description: cells[1] || `Row ${i}`,
+      lender: "-",
+      borrower: "-",
     });
   }
   return milestones;
@@ -303,39 +335,33 @@ export function parseCsvText(csv: string): Milestone[] {
 // ── CSV export generator ───────────────────────────────────────────────────────
 
 export function generateCsvExport(data: Milestone[]): string {
-  const header = "Deadline,Task,Document Reference,Agreement / Project Context,Status";
+  const header = "Name,Upload Date,Lender,Borrower,Status";
   const rows = data.map(
     (m) =>
-      `${m.deadline_date},"${m.milestone_name}","${m.document_ref}","${m.context}",${m.status}`
+      `"${m.file_name}","${m.upload_time}","${m.lender}","${m.borrower}",${m.status}`
   );
   return [header, ...rows].join("\n");
-}
-
-// ── Context detection helper ───────────────────────────────────────────────────
-
-function detectDocumentContext(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes("contract") || lower.includes("bridger solutions") || lower.includes("loan agreement")) {
-    return "Bridger Solutions Loan Agreement";
-  }
-  return "Bridger Solutions Loan Agreement";
 }
 
 // ── Hook ───────────────────────────────────────────────────────────────────────
 
 export function useAgent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [data, setData] = useState<Milestone[]>(INITIAL_MILESTONES);
+  const [data, setData] = useState<Milestone[]>([]);
   const [executions, setExecutions] = useState<Execution[]>([]);
   const [exports, setExports] = useState<ExportFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<string>(now());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [detailMilestone, setDetailMilestone] = useState<Milestone | null>(null);
   const [previewMilestone, setPreviewMilestone] = useState<Milestone | null>(null);
 
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasFetchedOnce = useRef(false);
 
   const logExecution = useCallback((label: string) => {
     setExecutions((prev) => [
@@ -344,34 +370,38 @@ export function useAgent() {
     ]);
   }, []);
 
-  // ── refreshData: poll the data endpoint ─────────────────────────────────
+  // ── refreshData: poll the production API ────────────────────────────────
 
   const refreshData = useCallback(async () => {
-    setIsRefreshing(true);
+    const isFirst = !hasFetchedOnce.current;
+    if (isFirst) {
+      setIsInitialLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
     try {
-      const res = await fetchLatestData();
-      if (res?.milestones && res.milestones.length > 0) {
-        const remote: Milestone[] = res.milestones.map((m) => ({
-          id: uid(),
-          deadline_date: m.deadline_date || new Date().toISOString().slice(0, 10),
-          milestone_name: m.milestone_name || "Untitled",
-          document_ref: m.document_ref || "—",
-          context: m.context || "Bridger Solutions - Construction Loan",
-          status: (m.status as MilestoneStatus) || deriveStatus(m.deadline_date || ""),
-        }));
-        setData(remote);
+      const res = await fetchAllDocuments();
+      if (res?.documents) {
+        const mapped = res.documents.map(mapDocumentToMilestone);
+        setData(mapped);
+        setFetchError(null);
+      } else {
+        setFetchError("Connection to data source lost, retrying...");
       }
       setLastRefreshed(now());
+      hasFetchedOnce.current = true;
     } catch {
-      // silent — next cycle will retry
+      setFetchError("Connection to data source lost, retrying...");
     } finally {
+      setIsInitialLoading(false);
       setIsRefreshing(false);
     }
   }, []);
 
-  // ── Auto-refresh every 30 s ──────────────────────────────────────────────
+  // ── Initial fetch + auto-refresh every 30 s ─────────────────────────────
 
   useEffect(() => {
+    refreshData();
     refreshTimerRef.current = setInterval(() => {
       refreshData();
     }, REFRESH_INTERVAL_MS);
@@ -380,7 +410,7 @@ export function useAgent() {
     };
   }, [refreshData]);
 
-  // ── sendMessage: add to chat → webhook → append response ────────────────
+  // ── sendMessage: POST to n8n AI-agent → parse response → display ─────
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -390,30 +420,15 @@ export function useAgent() {
       setIsProcessing(true);
 
       try {
-        // Build chat history for the webhook (all messages + the new one)
-        const chatHistoryForWebhook = [
-          ...messages.map((m) => ({ role: m.role, content: m.content })),
-          { role: "user", content: text },
-        ];
+        // 2. POST { session_id, message } to the n8n chat webhook
+        const responseArray = await sendChatMessage(text);
 
-        const context = detectDocumentContext(text);
+        if (responseArray) {
+          // 3. Extract the last assistant reply from the response
+          const assistantContent = extractAssistantReply(responseArray);
 
-        // 2. Send to n8n webhook with full chat history
-        const webhookRes = await sendChatWebhook({
-          message: text,
-          chat_history: chatHistoryForWebhook,
-          context,
-          timestamp: now(),
-        });
-
-        // 3. If webhook returned a response
-        if (webhookRes) {
-          // Append assistant reply
           const replyText =
-            webhookRes.reply ||
-            (webhookRes.milestones && webhookRes.milestones.length > 0
-              ? `I found ${webhookRes.milestones.length} milestone${webhookRes.milestones.length !== 1 ? "s" : ""} from the analysis. The data table has been updated.`
-              : "I've processed your request.");
+            assistantContent || "I've processed your request.";
 
           const assistantMsg: ChatMessage = {
             id: uid(),
@@ -421,64 +436,29 @@ export function useAgent() {
             content: replyText,
           };
           setMessages((prev) => [...prev, assistantMsg]);
+          logExecution("AI agent responded");
 
-          // Sync milestones to data table if present
-          if (webhookRes.milestones && webhookRes.milestones.length > 0) {
-            const remote: Milestone[] = webhookRes.milestones.map((m) => ({
-              id: uid(),
-              deadline_date: m.deadline_date || new Date().toISOString().slice(0, 10),
-              milestone_name: m.milestone_name || "Untitled",
-              document_ref: m.document_ref || "—",
-              context: m.context || "Bridger Solutions - Construction Loan",
-              status: (m.status as MilestoneStatus) || deriveStatus(m.deadline_date || ""),
-            }));
-            setData((prev) => [...prev, ...remote]);
-            logExecution(
-              `Webhook executed — ${remote.length} milestone${remote.length !== 1 ? "s" : ""} received`
-            );
-          } else {
-            logExecution("Webhook executed — response received");
+          // 4. If the reply indicates a data change, refresh the table
+          if (replyIndicatesDataChange(replyText)) {
+            await refreshData();
           }
-          return;
-        }
-
-        // 4. Webhook failed or unavailable — local fallback
-        let parsed: Milestone[] = [];
-        let fallbackReply = "";
-
-        if (/<table[\s>]/i.test(text)) {
-          parsed = parseHtmlTable(text);
-          fallbackReply = `I parsed an HTML table and extracted ${parsed.length} milestone${parsed.length !== 1 ? "s" : ""}. The data table has been updated.`;
-          logExecution(`HTML table parsed — ${parsed.length} rows extracted`);
-        } else if (
-          text.includes(",") &&
-          text.split("\n").filter((l) => l.trim()).length >= 2
-        ) {
-          parsed = parseCsvText(text);
-          fallbackReply = `I parsed CSV data and extracted ${parsed.length} milestone${parsed.length !== 1 ? "s" : ""}. The data table has been updated.`;
-          logExecution(`CSV text parsed — ${parsed.length} rows extracted`);
-        }
-
-        if (parsed.length > 0) {
-          setData((prev) => [...prev, ...parsed]);
         } else {
-          // Simulate a helpful assistant reply when webhook is unavailable
-          fallbackReply =
-            "I received your message but the AI service is currently unavailable. Please check your webhook configuration and try again.";
-          logExecution("Webhook unavailable — fallback response");
+          // Webhook failed or unavailable
+          const fallbackMsg: ChatMessage = {
+            id: uid(),
+            role: "assistant",
+            content:
+              "I received your message but the AI service is currently unavailable. Please try again shortly.",
+          };
+          setMessages((prev) => [...prev, fallbackMsg]);
+          logExecution("AI agent unavailable — no response");
         }
-
-        const assistantMsg: ChatMessage = {
-          id: uid(),
-          role: "assistant",
-          content: fallbackReply,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
       } catch {
         const errorMsg: ChatMessage = {
           id: uid(),
           role: "assistant",
-          content: "Sorry, something went wrong while processing your message. Please try again.",
+          content:
+            "Sorry, something went wrong while processing your message. Please try again.",
         };
         setMessages((prev) => [...prev, errorMsg]);
         logExecution("Processing failed");
@@ -486,127 +466,88 @@ export function useAgent() {
         setIsProcessing(false);
       }
     },
-    [messages, logExecution]
+    [logExecution, refreshData]
   );
 
-  // ── File upload handler ──────────────────────────────────────────────────
+  // ── File upload handler (POST to production endpoint) ────────────────────
 
   const handleFileUpload = useCallback(
     async (file: File) => {
-      // Add a user message about the file upload
+      // 1. Show user message about the file
       const userMsg: ChatMessage = {
         id: uid(),
         role: "user",
         content: `📎 Uploaded file: ${file.name}`,
       };
       setMessages((prev) => [...prev, userMsg]);
-      setIsProcessing(true);
+
+      // 2. Show "Uploading…" status message
+      const uploadingMsgId = uid();
+      const uploadingMsg: ChatMessage = {
+        id: uploadingMsgId,
+        role: "assistant",
+        content: `⏳ Uploading ${file.name}…`,
+      };
+      setMessages((prev) => [...prev, uploadingMsg]);
+      setIsUploading(true);
 
       try {
-        const ext = file.name.split(".").pop()?.toLowerCase();
-        const fileText = await file.text();
-        const base64 = await fileToBase64(file);
+        // 3. Build multipart/form-data payload
+        const formData = new FormData();
+        formData.append("data", file);
 
-        const chatHistoryForWebhook = [
-          ...messages.map((m) => ({ role: m.role, content: m.content })),
-          { role: "user", content: `Uploaded file: ${file.name}` },
-        ];
-
-        // Fire webhook with file data and chat history
-        const webhookRes = await sendChatWebhook({
-          message: `Analyze the uploaded file: ${file.name}`,
-          chat_history: chatHistoryForWebhook,
-          context: "Bridger Solutions Loan Agreement",
-          timestamp: now(),
-          file_metadata: { name: file.name, size: file.size, type: file.type || "application/octet-stream" },
-          files: [
-            {
-              name: file.name,
-              size: file.size,
-              type: file.type || "application/octet-stream",
-              content: base64,
-            },
-          ],
+        // 4. POST to production upload endpoint
+        const res = await fetch(FILE_UPLOAD_URL, {
+          method: "POST",
+          body: formData,
         });
 
-        if (webhookRes) {
-          const replyText =
-            webhookRes.reply ||
-            (webhookRes.milestones && webhookRes.milestones.length > 0
-              ? `I analyzed ${file.name} and found ${webhookRes.milestones.length} milestone${webhookRes.milestones.length !== 1 ? "s" : ""}. The data table has been updated.`
-              : `I've processed ${file.name}.`);
+        // 5. Remove the "Uploading…" placeholder
+        setMessages((prev) => prev.filter((m) => m.id !== uploadingMsgId));
 
+        if (res.ok) {
+          // Success — confirm in chat
           setMessages((prev) => [
             ...prev,
-            { id: uid(), role: "assistant", content: replyText },
-          ]);
-
-          if (webhookRes.milestones && webhookRes.milestones.length > 0) {
-            const remote: Milestone[] = webhookRes.milestones.map((m) => ({
+            {
               id: uid(),
-              deadline_date: m.deadline_date || new Date().toISOString().slice(0, 10),
-              milestone_name: m.milestone_name || "Untitled",
-              document_ref: m.document_ref || "—",
-              context: m.context || "Bridger Solutions - Construction Loan",
-              status: (m.status as MilestoneStatus) || deriveStatus(m.deadline_date || ""),
-            }));
-            setData((prev) => [...prev, ...remote]);
-          }
-          logExecution(`Webhook notified — file ${file.name} sent`);
-          return;
-        }
+              role: "assistant",
+              content: `✅ File "${file.name}" uploaded successfully.`,
+            },
+          ]);
+          logExecution(`File uploaded: ${file.name}`);
 
-        // Local fallback parsing
-        let parsed: Milestone[] = [];
-        let fallbackReply = "";
-
-        if (ext === "csv") {
-          parsed = parseCsvText(fileText);
-          await simulateApi(null, 600);
-          fallbackReply = `I parsed ${file.name} and extracted ${parsed.length} milestone${parsed.length !== 1 ? "s" : ""} from the CSV data. The data table has been updated.`;
-          logExecution(`File processed: ${file.name} — ${parsed.length} rows`);
-        } else if (ext === "html" || ext === "htm") {
-          parsed = parseHtmlTable(fileText);
-          await simulateApi(null, 600);
-          fallbackReply = `I parsed ${file.name} and extracted ${parsed.length} milestone${parsed.length !== 1 ? "s" : ""} from the HTML table. The data table has been updated.`;
-          logExecution(`HTML file processed: ${file.name} — ${parsed.length} rows`);
+          // 6. Trigger immediate table refresh so the new document appears
+          await refreshData();
         } else {
-          await simulateApi(null, 1200);
-          const futureDate = new Date(Date.now() + 30 * 86400000)
-            .toISOString()
-            .slice(0, 10);
-          const simulated: Milestone = {
-            id: uid(),
-            deadline_date: futureDate,
-            milestone_name: `Extracted from ${file.name}`,
-            document_ref: file.name,
-            context: "Imported",
-            status: deriveStatus(futureDate),
-          };
-          parsed = [simulated];
-          fallbackReply = `I analyzed ${file.name} and extracted 1 milestone. The data table has been updated.`;
-          logExecution(`File analyzed: ${file.name} — 1 milestone`);
+          // Server returned an error status
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: uid(),
+              role: "assistant",
+              content: `❌ Upload failed for "${file.name}" (server returned ${res.status}). Please try again.`,
+            },
+          ]);
+          logExecution(`Upload failed: ${file.name} — HTTP ${res.status}`);
         }
-
-        if (parsed.length > 0) {
-          setData((prev) => [...prev, ...parsed]);
-        }
-
-        setMessages((prev) => [
-          ...prev,
-          { id: uid(), role: "assistant", content: fallbackReply },
-        ]);
       } catch {
+        // Network / other error
+        setMessages((prev) => prev.filter((m) => m.id !== uploadingMsgId));
         setMessages((prev) => [
           ...prev,
-          { id: uid(), role: "assistant", content: `Sorry, I couldn't process ${file.name}. Please try again.` },
+          {
+            id: uid(),
+            role: "assistant",
+            content: `❌ Could not upload "${file.name}". Please check your connection and try again.`,
+          },
         ]);
-        logExecution(`File failed: ${file.name}`);
+        logExecution(`Upload error: ${file.name}`);
       } finally {
-        setIsProcessing(false);
+        setIsUploading(false);
       }
     },
-    [messages, logExecution]
+    [logExecution, refreshData]
   );
 
   // ── deleteMilestone ──────────────────────────────────────────────────────
@@ -655,7 +596,10 @@ export function useAgent() {
     exports,
     isProcessing,
     isExporting,
+    isUploading,
     isRefreshing,
+    isInitialLoading,
+    fetchError,
     lastRefreshed,
     detailMilestone,
     previewMilestone,

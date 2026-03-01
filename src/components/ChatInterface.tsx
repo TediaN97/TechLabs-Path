@@ -59,6 +59,27 @@ function TypingIndicator() {
   );
 }
 
+// ── Upload progress indicator ─────────────────────────────────────────────────
+
+function UploadProgressIndicator() {
+  return (
+    <div className="flex items-start gap-2 mb-3">
+      <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-500">
+        AI
+      </div>
+      <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-white border border-gray-100 shadow-sm">
+        <div className="flex items-center gap-2">
+          <svg className="h-4 w-4 animate-spin text-[#319795]" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm text-gray-500">Uploading file…</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Message bubble ──────────────────────────────────────────────────────────────
 
 function MessageBubble({ message }: { message: ChatMessage }) {
@@ -98,6 +119,7 @@ interface ChatInterfaceProps {
   onSendMessage: (text: string) => void;
   onFileUpload: (file: File) => void;
   isLoading: boolean;
+  isUploading?: boolean;
 }
 
 export default function ChatInterface({
@@ -105,24 +127,25 @@ export default function ChatInterface({
   onSendMessage,
   onFileUpload,
   isLoading,
+  isUploading = false,
 }: ChatInterfaceProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputValueRef = useRef("");
 
-  // Auto-scroll to bottom when messages change or loading state changes
+  // Auto-scroll to bottom when messages change or loading/uploading state changes
   useEffect(() => {
     const el = scrollRef.current;
     if (el) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages, isLoading]);
+  }, [messages, isLoading, isUploading]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const value = inputValueRef.current.trim();
-    if (!value || isLoading) return;
+    if (!value || isLoading || isUploading) return;
     onSendMessage(value);
     inputValueRef.current = "";
     if (inputRef.current) inputRef.current.value = "";
@@ -159,6 +182,7 @@ export default function ChatInterface({
           <MessageBubble key={msg.id} message={msg} />
         ))}
 
+        {isUploading && <UploadProgressIndicator />}
         {isLoading && <TypingIndicator />}
       </div>
 
