@@ -69,7 +69,7 @@ function UploadProgressIndicator() {
       </div>
       <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-white border border-gray-100 shadow-sm">
         <div className="flex items-center gap-2">
-          <svg className="h-4 w-4 animate-spin text-[#319795]" fill="none" viewBox="0 0 24 24">
+          <svg className="h-4 w-4 animate-spin text-[#399ddb]" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
@@ -91,7 +91,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       <div
         className={`flex-shrink-0 h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-bold ${
           isUser
-            ? "bg-[#319795] text-white"
+            ? "bg-[#399ddb] text-white"
             : "bg-gray-200 text-gray-500"
         }`}
       >
@@ -102,7 +102,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       <div
         className={`max-w-[75%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
           isUser
-            ? "bg-[#319795] text-white rounded-2xl rounded-tr-sm"
+            ? "bg-[#399ddb] text-white rounded-2xl rounded-tr-sm"
             : "bg-white text-gray-700 border border-gray-100 shadow-sm rounded-2xl rounded-tl-sm"
         }`}
       >
@@ -254,7 +254,7 @@ export default function ChatInterface({
             }}
             onKeyDown={handleKeyDown}
             disabled={isLoading}
-            className="flex-1 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-2xl bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 transition-colors disabled:opacity-50 resize-none leading-relaxed"
+            className="flex-1 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-2xl bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#399ddb]/40 focus:border-[#399ddb] transition-colors disabled:opacity-50 resize-none leading-relaxed"
             style={{ caretColor: "black", overflowY: "hidden" }}
           />
 
@@ -262,7 +262,7 @@ export default function ChatInterface({
           <button
             type="submit"
             disabled={isLoading}
-            className="flex-shrink-0 p-2.5 mb-0.5 text-white bg-[#319795] rounded-full hover:bg-[#2C7A7B] active:bg-[#285E61] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-shrink-0 p-2.5 mb-0.5 text-white bg-[#399ddb] rounded-full hover:bg-[#2d8bc4] active:bg-[#2578a8] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             title="Send message"
           >
             <SendIcon />

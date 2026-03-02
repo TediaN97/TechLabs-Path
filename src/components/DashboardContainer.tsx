@@ -158,7 +158,7 @@ function ExportsPanel({
         <button
           onClick={onCreateCsv}
           disabled={isExporting}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#319795] rounded-md hover:bg-[#2C7A7B] active:bg-[#285E61] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#399ddb] rounded-md hover:bg-[#2d8bc4] active:bg-[#2578a8] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isExporting ? <SpinnerIcon className="h-3 w-3" /> : <FileIcon />}
           Create CSV Export
@@ -182,7 +182,7 @@ function ExportsPanel({
               <a
                 href={f.blob_url}
                 download={f.filename}
-                className="flex-shrink-0 px-3 py-1 text-xs font-medium text-[#319795] border border-[#319795]/30 rounded-md hover:bg-[#319795]/5 active:bg-[#319795]/10 transition-colors cursor-pointer"
+                className="flex-shrink-0 px-3 py-1 text-xs font-medium text-[#399ddb] border border-[#399ddb]/30 rounded-md hover:bg-[#399ddb]/5 active:bg-[#399ddb]/10 transition-colors cursor-pointer"
               >
                 Download
               </a>
@@ -210,12 +210,12 @@ export default function DashboardContainer() {
           </h1>
           <div className="flex items-center gap-3">
             {isLoading && (
-              <span className="flex items-center gap-1.5 text-xs text-[#319795]">
+              <span className="flex items-center gap-1.5 text-xs text-[#399ddb]">
                 <SpinnerIcon className="h-3.5 w-3.5" />
                 Processing…
               </span>
             )}
-            <div className="h-8 w-8 rounded-full bg-[#319795] flex items-center justify-center text-white text-xs font-bold">
+            <div className="h-8 w-8 rounded-full bg-[#399ddb] flex items-center justify-center text-white text-xs font-bold">
               TL
             </div>
           </div>
