@@ -4,7 +4,7 @@ const VALID_PIN = "123456";
 
 function LockIcon() {
   return (
-    <svg className="h-10 w-10 text-[#399ddb]" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+    <svg className="h-10 w-10 text-[#6556d2]" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
       <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0110 0v4" />
     </svg>
@@ -98,7 +98,7 @@ export default function SecurityGateway({ children }: { children: React.ReactNod
               value={digit}
               onChange={(e) => handleChange(i, e.target.value)}
               onKeyDown={(e) => handleKeyDown(i, e)}
-              className="w-11 h-13 text-center text-xl font-bold text-gray-800 border-2 border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#399ddb]/40 focus:border-[#399ddb] transition-colors"
+              className="w-11 h-13 text-center text-xl font-bold text-gray-800 border-2 border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2] transition-colors"
               style={{ caretColor: "black" }}
             />
           ))}
@@ -110,7 +110,7 @@ export default function SecurityGateway({ children }: { children: React.ReactNod
 
         <button
           type="submit"
-          className="w-full py-2.5 text-sm font-semibold text-white bg-[#399ddb] rounded-lg hover:bg-[#2d8bc4] active:bg-[#2578a8] transition-colors cursor-pointer"
+          className="w-full py-2.5 text-sm font-semibold text-white bg-[#6556d2] rounded-lg hover:bg-[#5445b5] active:bg-[#4a3a9e] transition-colors cursor-pointer"
         >
           Submit
         </button>

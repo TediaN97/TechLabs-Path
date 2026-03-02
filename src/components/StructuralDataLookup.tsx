@@ -86,7 +86,7 @@ function DeadlinesDropdown({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-[#399ddb] rounded-md hover:bg-[#2d8bc4] transition-colors cursor-pointer"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
       >
         <ClockIcon />
         Deadlines
@@ -96,13 +96,13 @@ function DeadlinesDropdown({
         <div className="absolute right-0 mt-1 w-40 bg-white rounded-md shadow-lg border border-gray-200 py-1 z-20">
           <button
             onClick={() => { onAiDeadlines(); setOpen(false); }}
-            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#399ddb]/10 hover:text-[#399ddb] transition-colors cursor-pointer"
+            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#6556d2]/10 hover:text-[#6556d2] transition-colors cursor-pointer"
           >
             AI analyzed
           </button>
           <button
             onClick={() => { onVectorDeadlines(); setOpen(false); }}
-            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#399ddb]/10 hover:text-[#399ddb] transition-colors cursor-pointer"
+            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#6556d2]/10 hover:text-[#6556d2] transition-colors cursor-pointer"
           >
             Vectorized
           </button>
@@ -252,7 +252,7 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
           <div className="mt-3 flex items-center gap-3">
             <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full ${isPast ? "bg-red-400" : milestone.raw_status === "vectorized" ? "bg-green-400" : "bg-[#399ddb]"}`}
+                className={`h-full rounded-full ${isPast ? "bg-red-400" : milestone.raw_status === "vectorized" ? "bg-green-400" : "bg-[#6556d2]"}`}
                 style={{ width: isPast || milestone.raw_status === "vectorized" ? "100%" : `${Math.max(10, 100 - Math.min(100, diffDays))}%` }}
               />
             </div>
@@ -449,7 +449,7 @@ export default function StructuralDataLookup({
               placeholder="Filter data..."
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-md bg-gray-50 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#399ddb]/40 focus:border-[#399ddb] transition-colors"
+              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-md bg-gray-50 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2] transition-colors"
             />
           </div>
         </div>
@@ -467,7 +467,7 @@ export default function StructuralDataLookup({
         {/* Loading spinner overlay for initial fetch */}
         {isLoading && data.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <svg className="h-8 w-8 animate-spin text-[#399ddb]" fill="none" viewBox="0 0 24 24">
+            <svg className="h-8 w-8 animate-spin text-[#6556d2]" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
@@ -520,8 +520,8 @@ export default function StructuralDataLookup({
                             {entry.file_name}
                           </span>
                           {entry.raw_status.toLowerCase() !== "vectorized" && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-[#399ddb] bg-[#399ddb]/10 rounded-full whitespace-nowrap flex-shrink-0 animate-pulse">
-                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#399ddb]" />
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-[#6556d2] bg-[#6556d2]/10 rounded-full whitespace-nowrap flex-shrink-0 animate-pulse">
+                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#6556d2]" />
                               Batch Processing
                             </span>
                           )}
@@ -542,7 +542,7 @@ export default function StructuralDataLookup({
                           <button
                             onClick={() => onDetailStruct(entry)}
                             title="Detail"
-                            className="p-1.5 text-gray-400 hover:text-[#399ddb] hover:bg-[#399ddb]/10 rounded-md transition-colors cursor-pointer"
+                            className="p-1.5 text-gray-400 hover:text-[#6556d2] hover:bg-[#6556d2]/10 rounded-md transition-colors cursor-pointer"
                           >
                             <InfoIcon />
                           </button>
@@ -554,7 +554,7 @@ export default function StructuralDataLookup({
                           {/* 3. Important Info Button */}
                           <button
                             onClick={() => setAiMilestone(entry)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-[#399ddb] rounded-md hover:bg-[#2d8bc4] transition-colors cursor-pointer whitespace-nowrap"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer whitespace-nowrap"
                           >
                             <SparklesIcon />
                             Important info
@@ -597,7 +597,7 @@ export default function StructuralDataLookup({
                   onClick={() => setCurrentPage(page)}
                   className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
                     page === safePage
-                      ? "bg-[#399ddb] text-white"
+                      ? "bg-[#6556d2] text-white"
                       : "text-gray-600 border border-gray-200 hover:bg-gray-50"
                   }`}
                 >
