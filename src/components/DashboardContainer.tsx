@@ -224,7 +224,7 @@ export default function DashboardContainer() {
 
       {/* Grid: left center (Prompt + Data) | right sidebar (Triggers + Exports) */}
       <main className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
           {/* ── Left / Center: Chat + Data ───────────────────────────────── */}
           <div className="flex flex-col gap-6 min-w-0">
             <ChatInterface

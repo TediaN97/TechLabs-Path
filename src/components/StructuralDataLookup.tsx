@@ -96,16 +96,14 @@ function DeadlinesDropdown({
         <div className="absolute right-0 mt-1 w-40 bg-white rounded-md shadow-lg border border-gray-200 py-1 z-20">
           <button
             onClick={() => { onAiDeadlines(); setOpen(false); }}
-            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#399ddb]/10 hover:text-[#399ddb] transition-colors flex items-center gap-2 cursor-pointer"
+            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#399ddb]/10 hover:text-[#399ddb] transition-colors cursor-pointer"
           >
-            <SparklesIcon />
             AI analyzed
           </button>
           <button
             onClick={() => { onVectorDeadlines(); setOpen(false); }}
-            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#399ddb]/10 hover:text-[#399ddb] transition-colors flex items-center gap-2 cursor-pointer"
+            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#399ddb]/10 hover:text-[#399ddb] transition-colors cursor-pointer"
           >
-            <ClockIcon />
             Vectorized
           </button>
         </div>
@@ -479,22 +477,22 @@ export default function StructuralDataLookup({
 
         {/* Table */}
         <div className="overflow-x-auto" style={{ display: isLoading && data.length === 0 ? "none" : undefined }}>
-          <table className="w-full text-sm table-fixed" style={{ minWidth: "700px" }}>
+          <table className="w-full text-sm table-fixed" style={{ minWidth: "900px" }}>
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="w-[27%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th className="w-[24%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Name
                 </th>
                 <th className="w-[12%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Upload Date
                 </th>
-                <th className="w-[15%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Lender
+                <th className="w-[24%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  StakeHolder 1
                 </th>
-                <th className="w-[15%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Borrower
+                <th className="w-[24%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  StakeHolder 2
                 </th>
-                <th className="w-[31%] px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th className="w-[20%] px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -522,11 +520,8 @@ export default function StructuralDataLookup({
                             {entry.file_name}
                           </span>
                           {entry.raw_status.toLowerCase() !== "vectorized" && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-[#399ddb] bg-[#399ddb]/10 rounded-full whitespace-nowrap flex-shrink-0">
-                              <svg className="h-2.5 w-2.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                              </svg>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-[#399ddb] bg-[#399ddb]/10 rounded-full whitespace-nowrap flex-shrink-0 animate-pulse">
+                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#399ddb]" />
                               Batch Processing
                             </span>
                           )}
@@ -542,7 +537,8 @@ export default function StructuralDataLookup({
                         {entry.borrower}
                       </td>
                       <td className="px-4 py-2">
-                        <div className="flex items-center justify-end gap-4">
+                        <div className="flex items-center justify-end gap-2">
+                          {/* 1. Detail Icon */}
                           <button
                             onClick={() => onDetailStruct(entry)}
                             title="Detail"
@@ -550,10 +546,20 @@ export default function StructuralDataLookup({
                           >
                             <InfoIcon />
                           </button>
+                          {/* 2. Deadlines Dropdown */}
                           <DeadlinesDropdown
                             onAiDeadlines={() => setAiMilestone(entry)}
                             onVectorDeadlines={() => setVectorMilestone(entry)}
                           />
+                          {/* 3. Important Info Button */}
+                          <button
+                            onClick={() => setAiMilestone(entry)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-[#399ddb] rounded-md hover:bg-[#2d8bc4] transition-colors cursor-pointer whitespace-nowrap"
+                          >
+                            <SparklesIcon />
+                            Important info
+                          </button>
+                          {/* 4. Delete Icon */}
                           <button
                             onClick={() => onDelete(entry.document_id || entry.id)}
                             title="Delete"
