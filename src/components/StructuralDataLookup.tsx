@@ -1,5 +1,5 @@
 import { Fragment, useState, useRef, useMemo, useEffect } from "react";
-import type { Milestone } from "../hooks/useAgent";
+import type { Milestone, DeadlineEntry } from "../hooks/useAgent";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 
@@ -235,48 +235,93 @@ function DetailPanel({ milestone, onClose }: { milestone: Milestone; onClose: ()
   );
 }
 
-// ── Vector Deadlines Modal ─────────────────────────────────────────────────────
+// ── Vectorized Deadlines Table Modal ──────────────────────────────────────────
 
 function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClose: () => void }) {
-  const deadline = new Date(milestone.deadline_date + "T00:00:00");
-  const today = new Date();
-  const diffDays = Math.round((deadline.getTime() - today.getTime()) / 86400000);
-  const isPast = diffDays < 0;
+  const deadlines: DeadlineEntry[] = milestone.deadlines ?? [];
 
   return (
-    <ModalShell title="Vector Deadlines" onClose={onClose}>
-      <div className="space-y-3">
-        <div className="bg-gray-50 rounded-md p-4 border border-gray-100">
-          <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">Timeline Vector</p>
-          <p className="text-sm font-medium text-gray-800 truncate" title={milestone.file_name}>{milestone.file_name}</p>
-          <div className="mt-3 flex items-center gap-3">
-            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full ${isPast ? "bg-red-400" : milestone.raw_status === "vectorized" ? "bg-green-400" : "bg-[#6556d2]"}`}
-                style={{ width: isPast || milestone.raw_status === "vectorized" ? "100%" : `${Math.max(10, 100 - Math.min(100, diffDays))}%` }}
-              />
-            </div>
-            <span className={`text-xs font-semibold ${isPast ? "text-red-500" : "text-gray-600"}`}>
-              {isPast ? `${Math.abs(diffDays)}d overdue` : milestone.raw_status === "vectorized" ? "Complete" : `${diffDays}d remaining`}
-            </span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div
+        className="bg-white rounded-lg shadow-xl w-full max-w-3xl mx-4 overflow-hidden max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-gray-800">Vectorized Deadlines</h3>
+            <p className="text-[11px] text-gray-400 mt-0.5 truncate" title={milestone.file_name}>
+              {milestone.file_name}
+            </p>
           </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 cursor-pointer text-lg leading-none ml-4 flex-shrink-0"
+          >
+            &times;
+          </button>
         </div>
-        <div className="grid grid-cols-3 gap-3 text-xs">
-          <div className="bg-gray-50 rounded-md p-3 border border-gray-100 text-center">
-            <p className="text-gray-400 uppercase tracking-wider font-semibold">Uploaded</p>
-            <p className="mt-1 text-gray-700 font-medium">{formatUploadDate(milestone.upload_time)}</p>
+
+        {/* Content */}
+        {deadlines.length === 0 ? (
+          <div className="px-5 py-12 text-center">
+            <p className="text-sm text-gray-400">No vectorized deadlines found for this document.</p>
           </div>
-          <div className="bg-gray-50 rounded-md p-3 border border-gray-100 text-center">
-            <p className="text-gray-400 uppercase tracking-wider font-semibold">Lender</p>
-            <p className="mt-1 text-gray-700 font-medium truncate" title={milestone.lender}>{milestone.lender}</p>
+        ) : (
+          <div className="overflow-auto flex-1">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-[#6556d2]/5 border-b border-[#6556d2]/20">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider">
+                    Description
+                  </th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
+                    Deadline
+                  </th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
+                    Section Name
+                  </th>
+                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
+                    Section Page
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {deadlines.map((dl, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
+                    <td className="px-4 py-3 text-gray-700 text-xs leading-relaxed">
+                      {dl.description || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                      {dl.date_raw || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-xs">
+                      {dl.section_title || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-xs text-center">
+                      {dl.section_index != null ? String(dl.section_index) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="bg-gray-50 rounded-md p-3 border border-gray-100 text-center">
-            <p className="text-gray-400 uppercase tracking-wider font-semibold">Status</p>
-            <p className="mt-1"><StatusBadge rawStatus={milestone.raw_status} /></p>
-          </div>
+        )}
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/50">
+          <span className="text-[11px] text-gray-400">
+            {deadlines.length} deadline{deadlines.length !== 1 ? "s" : ""} found
+          </span>
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors cursor-pointer"
+          >
+            Close
+          </button>
         </div>
       </div>
-    </ModalShell>
+    </div>
   );
 }
 

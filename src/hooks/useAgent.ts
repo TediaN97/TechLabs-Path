@@ -10,6 +10,13 @@ export interface ContractingParty {
   role: string;
 }
 
+export interface DeadlineEntry {
+  description: string;
+  date_raw: string;
+  section_title: string;
+  section_index: string | number;
+}
+
 export interface Milestone {
   id: string;
   deadline_date: string;
@@ -20,6 +27,7 @@ export interface Milestone {
   raw_status: string;
   document_id?: string;
   contracting_parties?: ContractingParty[];
+  deadlines?: DeadlineEntry[];
   file_name: string;
   upload_time: string;
   description: string;
@@ -50,6 +58,7 @@ interface ApiDocument {
   upload_time: string;
   status: string;
   contracting_parties?: { name: string; role: string }[];
+  deadlines?: { description: string; date_raw: string; section_title: string; section_index: string | number }[];
 }
 
 interface GetAllDocumentsResponse {
@@ -91,6 +100,7 @@ function mapDocumentToMilestone(doc: ApiDocument): Milestone {
     raw_status: doc.status || "unknown",
     document_id: doc.document_id,
     contracting_parties: parties,
+    deadlines: doc.deadlines ?? [],
     file_name: doc.file_name || "—",
     upload_time: doc.upload_time || "",
     description: doc.description || "No description",
