@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type FormEvent } from "react";
 
-const VALID_PIN = "123456";
+const VALID_PIN = "012345";
 
 function LockIcon() {
   return (
