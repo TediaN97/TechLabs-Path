@@ -1,4 +1,4 @@
-import { type FormEvent, useRef, useEffect, useCallback } from "react";
+import { type FormEvent, useState, useRef, useEffect, useCallback } from "react";
 
 // ── Types ───────────────────────────────────────────────────────────────────────
 
@@ -6,6 +6,7 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  rawJson?: unknown;
 }
 
 // ── Icons ───────────────────────────────────────────────────────────────────────
@@ -61,22 +62,69 @@ function TypingIndicator() {
 
 // ── Upload progress indicator ─────────────────────────────────────────────────
 
-function UploadProgressIndicator() {
+// ── Upload progress indicator ─────────────────────────────────────────────────
+
+function FileDocIcon() {
   return (
-    <div className="flex items-start gap-2 mb-3">
-      <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-500">
-        AI
+    <svg className="h-4 w-4 text-[#6556d2]" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+    </svg>
+  );
+}
+
+const UPLOAD_STEPS = [
+  (name: string) => `Uploading ${name}...`,
+  () => "Still sending data, please stay with us...",
+  () => "Almost there, finalizing the transfer...",
+];
+const UPLOAD_THRESHOLDS = [10000, 25000]; // ms
+
+function UploadProgressBubble({ fileName }: { fileName: string }) {
+  const [step, setStep] = useState(0);
+  const startRef = useRef(Date.now());
+
+  useEffect(() => {
+    startRef.current = Date.now();
+    setStep(0);
+    const id = setInterval(() => {
+      const elapsed = Date.now() - startRef.current;
+      if (elapsed >= UPLOAD_THRESHOLDS[1]) setStep(2);
+      else if (elapsed >= UPLOAD_THRESHOLDS[0]) setStep(1);
+    }, 500);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="flex items-start gap-2 mb-3 flex-row-reverse">
+      <div className="flex-shrink-0 h-7 w-7 rounded-full bg-[#6556d2] flex items-center justify-center text-[10px] font-bold text-white">
+        You
       </div>
-      <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-white border border-gray-100 shadow-sm">
+      <div className="max-w-[75%] px-4 py-2.5 text-sm leading-relaxed bg-[#f0effb] text-[#3b2e7e] rounded-2xl rounded-tr-sm">
+        <div className="flex items-center gap-2 mb-1">
+          <FileDocIcon />
+          <span className="font-medium truncate">{fileName}</span>
+        </div>
         <div className="flex items-center gap-2">
-          <svg className="h-4 w-4 animate-spin text-[#6556d2]" fill="none" viewBox="0 0 24 24">
+          <svg className="h-3.5 w-3.5 animate-spin text-[#6556d2] flex-shrink-0" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <span className="text-sm text-gray-500">Uploading file…</span>
+          <span className="text-xs text-[#6556d2]">{UPLOAD_STEPS[step](fileName)}</span>
         </div>
       </div>
     </div>
+  );
+}
+
+// ── JSON code block icon ─────────────────────────────────────────────────────
+
+function CodeIcon() {
+  return (
+    <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <polyline points="16 18 22 12 16 6" />
+      <polyline points="8 6 2 12 8 18" />
+    </svg>
   );
 }
 
@@ -84,29 +132,58 @@ function UploadProgressIndicator() {
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
+  const [showJson, setShowJson] = useState(false);
+  const hasJson = message.rawJson != null;
 
   return (
     <div className={`flex items-start gap-2 mb-3 ${isUser ? "flex-row-reverse" : ""}`}>
-      {/* Avatar */}
+      {/* Avatar — clickable when rawJson exists */}
       <div
+        onClick={hasJson ? () => setShowJson((v) => !v) : undefined}
+        title={hasJson ? `View raw ${isUser ? "request" : "response"} JSON` : undefined}
         className={`flex-shrink-0 h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-bold ${
           isUser
             ? "bg-[#6556d2] text-white"
             : "bg-gray-200 text-gray-500"
+        } ${hasJson ? "cursor-pointer hover:ring-2 hover:ring-[#6556d2]/40 transition-shadow" : ""} ${
+          showJson ? "ring-2 ring-[#6556d2]" : ""
         }`}
       >
         {isUser ? "You" : "AI"}
       </div>
 
-      {/* Bubble */}
-      <div
-        className={`max-w-[75%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
-          isUser
-            ? "bg-[#f0effb] text-[#3b2e7e] rounded-2xl rounded-tr-sm"
-            : "bg-white text-gray-700 border border-gray-100 shadow-sm rounded-2xl rounded-tl-sm"
-        }`}
-      >
-        {message.content}
+      {/* Bubble + optional JSON block */}
+      <div className={`max-w-[75%] ${isUser ? "text-right" : ""}`}>
+        <div
+          className={`px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
+            isUser
+              ? "bg-[#f0effb] text-[#3b2e7e] rounded-2xl rounded-tr-sm"
+              : "bg-white text-gray-700 border border-gray-100 shadow-sm rounded-2xl rounded-tl-sm"
+          }`}
+        >
+          {message.content}
+        </div>
+
+        {/* Togglable JSON debug view */}
+        {showJson && hasJson && (
+          <div className={`mt-1.5 rounded-lg border border-[#6556d2]/20 overflow-hidden ${isUser ? "text-left" : ""}`}>
+            <div className="flex items-center justify-between px-3 py-1.5 bg-[#6556d2]/5 border-b border-[#6556d2]/10">
+              <span className="text-[10px] font-semibold text-[#6556d2] uppercase tracking-wider flex items-center gap-1">
+                <CodeIcon />
+                {isUser ? "Request JSON" : "Response JSON"}
+              </span>
+              <button
+                onClick={() => setShowJson(false)}
+                className="text-[10px] text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+            <pre className="px-3 py-2.5 text-[11px] leading-relaxed font-mono text-gray-300 bg-[#1e1e1e] overflow-x-auto max-h-64 overflow-y-auto whitespace-pre">
+              {JSON.stringify(message.rawJson, null, 2)}
+            </pre>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -125,6 +202,7 @@ interface ChatInterfaceProps {
   onFileUpload: (file: File) => void;
   isLoading: boolean;
   isUploading?: boolean;
+  uploadingFileName?: string;
 }
 
 export default function ChatInterface({
@@ -133,6 +211,7 @@ export default function ChatInterface({
   onFileUpload,
   isLoading,
   isUploading = false,
+  uploadingFileName = "",
 }: ChatInterfaceProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -216,7 +295,7 @@ export default function ChatInterface({
           <MessageBubble key={msg.id} message={msg} />
         ))}
 
-        {isUploading && <UploadProgressIndicator />}
+        {isUploading && <UploadProgressBubble fileName={uploadingFileName} />}
         {isLoading && <TypingIndicator />}
       </div>
 
@@ -236,11 +315,11 @@ export default function ChatInterface({
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            disabled={isLoading}
-            className="flex-shrink-0 p-2 mb-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isLoading || isUploading}
+            className="inline-flex items-center mb-1 gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
             title="Upload file"
           >
-            <UploadIcon />
+            Upload
           </button>
 
           {/* Auto-expanding textarea */}
@@ -253,7 +332,7 @@ export default function ChatInterface({
               resizeTextarea();
             }}
             onKeyDown={handleKeyDown}
-            disabled={isLoading}
+            disabled={isLoading || isUploading}
             className="flex-1 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-2xl bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2] transition-colors disabled:opacity-50 resize-none leading-relaxed"
             style={{ caretColor: "black", overflowY: "hidden" }}
           />
@@ -261,7 +340,7 @@ export default function ChatInterface({
           {/* Send button — pinned to bottom of the row */}
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || isUploading}
             className="flex-shrink-0 p-2.5 mb-0.5 text-white bg-[#6556d2] rounded-full hover:bg-[#5445b5] active:bg-[#4a3a9e] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             title="Send message"
           >

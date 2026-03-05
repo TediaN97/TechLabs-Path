@@ -1,5 +1,12 @@
-import { Fragment, useState, useRef, useMemo, useEffect } from "react";
+import { Fragment, useState, useRef, useMemo, useEffect, useCallback } from "react";
 import type { Milestone, DeadlineEntry } from "../hooks/useAgent";
+
+type SortKey = "file_name" | "upload_time" | "lender" | "borrower";
+type SortDirection = "asc" | "desc";
+interface SortConfig {
+  key: SortKey;
+  direction: SortDirection;
+}
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 
@@ -16,7 +23,7 @@ function SearchIcon() {
 
 function InfoIcon() {
   return (
-    <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="10" />
       <path d="M12 16v-4M12 8h.01" />
     </svg>
@@ -40,6 +47,23 @@ function ChevronDownIcon() {
   );
 }
 
+function ChevronUpIcon() {
+  return (
+    <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <polyline points="6 15 12 9 18 15" />
+    </svg>
+  );
+}
+
+function SortIcon() {
+  return (
+    <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <polyline points="6 9 12 4 18 9" />
+      <polyline points="6 15 12 20 18 15" />
+    </svg>
+  );
+}
+
 function SparklesIcon() {
   return (
     <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
@@ -50,7 +74,7 @@ function SparklesIcon() {
 
 function Trash2Icon() {
   return (
-    <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
       <polyline points="3 6 5 6 21 6" />
       <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
       <line x1="10" y1="11" x2="10" y2="17" />
@@ -270,9 +294,9 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
         ) : (
           <div className="overflow-auto flex-1">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
+              <thead className="top-0 z-10">
                 <tr className="bg-[#6556d2]/5 border-b border-[#6556d2]/20">
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase">
                     Description
                   </th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
@@ -409,6 +433,8 @@ interface StructuralDataLookupProps {
   detailMilestone: Milestone | null;
   onDetailStruct: (m: Milestone | null) => void;
   onDelete: (id: string) => void;
+  isUploading?: boolean;
+  uploadingFileName?: string;
 }
 
 export default function StructuralDataLookup({
@@ -420,34 +446,52 @@ export default function StructuralDataLookup({
   detailMilestone,
   onDetailStruct,
   onDelete,
+  isUploading = false,
+  uploadingFileName = "",
 }: StructuralDataLookupProps) {
   const [filterText, setFilterText] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [vectorMilestone, setVectorMilestone] = useState<Milestone | null>(null);
   const [aiMilestone, setAiMilestone] = useState<Milestone | null>(null);
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "upload_time", direction: "desc" });
+
+  const handleSort = useCallback((key: SortKey) => {
+    setSortConfig((prev) =>
+      prev.key === key
+        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: "asc" }
+    );
+  }, []);
 
   const filtered = useMemo(() => {
-  // 1. Filtrovanie dát
-  let result = data;
-  
-  if (filterText.trim()) {
-    const q = filterText.toLowerCase();
-    result = data.filter(
-      (m) =>
-        m.file_name.toLowerCase().includes(q) ||
-        (m.lender && m.lender.toLowerCase().includes(q)) ||
-        (m.borrower && m.borrower.toLowerCase().includes(q)) ||
-        (m.status && m.status.toLowerCase().includes(q)) ||
-        formatUploadDate(m.upload_time).includes(q)
-    );
-  }
+    // 1. Filter
+    let result = data;
 
-  // 2. Zoradenie podľa upload_time (od najnovšieho po najstaršie)
-  return [...result].sort((a, b) => {
-    return new Date(b.upload_time).getTime() - new Date(a.upload_time).getTime();
-  });
+    if (filterText.trim()) {
+      const q = filterText.toLowerCase();
+      result = data.filter(
+        (m) =>
+          m.file_name.toLowerCase().includes(q) ||
+          (m.lender && m.lender.toLowerCase().includes(q)) ||
+          (m.borrower && m.borrower.toLowerCase().includes(q)) ||
+          (m.status && m.status.toLowerCase().includes(q)) ||
+          formatUploadDate(m.upload_time).includes(q)
+      );
+    }
 
-}, [data, filterText]);
+    // 2. Sort
+    const { key, direction } = sortConfig;
+    const mult = direction === "asc" ? 1 : -1;
+
+    return [...result].sort((a, b) => {
+      if (key === "upload_time") {
+        return mult * (new Date(a.upload_time).getTime() - new Date(b.upload_time).getTime());
+      }
+      const valA = (a[key] ?? "").toLowerCase();
+      const valB = (b[key] ?? "").toLowerCase();
+      return mult * valA.localeCompare(valB);
+    });
+  }, [data, filterText, sortConfig]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / RECORDS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
@@ -525,31 +569,71 @@ export default function StructuralDataLookup({
           <table className="w-full text-sm table-fixed" style={{ minWidth: "900px" }}>
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="w-[24%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Name
-                </th>
-                <th className="w-[12%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Upload Date
-                </th>
-                <th className="w-[24%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  StakeHolder 1
-                </th>
-                <th className="w-[24%] px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  StakeHolder 2
-                </th>
+                {([
+                  { key: "file_name" as SortKey, label: "Name", width: "w-[24%]" },
+                  { key: "upload_time" as SortKey, label: "Upload Date", width: "w-[12%]" },
+                  { key: "lender" as SortKey, label: "StakeHolder 1", width: "w-[24%]" },
+                  { key: "borrower" as SortKey, label: "StakeHolder 2", width: "w-[24%]" },
+                ] as const).map((col) => {
+                  const isActive = sortConfig.key === col.key;
+                  return (
+                    <th
+                      key={col.key}
+                      className={`${col.width} px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider select-none cursor-pointer group ${
+                        isActive ? "text-[#6556d2]" : "text-gray-500"
+                      }`}
+                      onClick={() => handleSort(col.key)}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {col.label}
+                        <span className={isActive ? "text-[#6556d2]" : "text-gray-300 group-hover:text-gray-400 transition-colors"}>
+                          {isActive
+                            ? sortConfig.direction === "asc"
+                              ? <ChevronUpIcon />
+                              : <ChevronDownIcon />
+                            : <SortIcon />}
+                        </span>
+                      </span>
+                    </th>
+                  );
+                })}
                 <th className="w-[20%] px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
+              {/* Ghost row while uploading */}
+              {isUploading && uploadingFileName && !isLoading && (
+                <tr className="animate-pulse bg-[#6556d2]/[0.03]">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[#6556d2] font-medium truncate" title={uploadingFileName}>
+                        {uploadingFileName}
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-[#6556d2] bg-[#6556d2]/10 rounded-full whitespace-nowrap flex-shrink-0">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#6556d2]" />
+                        Batch Processing...
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-[#6556d2]/70 text-xs italic">Just now</td>
+                  <td className="px-4 py-3"><div className="h-4 w-24 bg-[#6556d2]/10 rounded animate-pulse" /></td>
+                  <td className="px-4 py-3"><div className="h-4 w-24 bg-[#6556d2]/10 rounded animate-pulse" /></td>
+                  <td className="px-4 py-2">
+                    <div className="flex items-center justify-end gap-2 opacity-30 pointer-events-none">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 font-medium text-white bg-[#6556d2] rounded-md"><InfoIcon /></span>
+                    </div>
+                  </td>
+                </tr>
+              )}
               {isLoading ? (
                 <>
                   <SkeletonRow />
                   <SkeletonRow />
                   <SkeletonRow />
                 </>
-              ) : filtered.length === 0 ? (
+              ) : filtered.length === 0 && !isUploading ? (
                 <tr>
                   <td colSpan={5} className="px-5 py-10 text-center text-gray-400">
                     No matching records found.
@@ -587,7 +671,7 @@ export default function StructuralDataLookup({
                           <button
                             onClick={() => onDetailStruct(entry)}
                             title="Detail"
-                            className="p-1.5 text-gray-400 hover:text-[#6556d2] hover:bg-[#6556d2]/10 rounded-md transition-colors cursor-pointer"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer whitespace-nowrap"
                           >
                             <InfoIcon />
                           </button>

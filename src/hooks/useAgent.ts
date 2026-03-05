@@ -113,7 +113,7 @@ function mapDocumentToMilestone(doc: ApiDocument): Milestone {
 
 /** n8n AI-agent chat webhook */
 const N8N_CHAT_URL =
-  "https://vltechpath.app.n8n.cloud/webhook/chat";
+  "https://20.110.72.120.nip.io/webhook/chat";
 
 /** Production API endpoint for fetching all documents */
 const DATA_REFRESH_URL =
@@ -276,6 +276,10 @@ export interface Trigger {
   created_at: string;
   status: string;
   last_execution_status: string;
+  frequency: string;
+  next_run_at: string;
+  recipient_email: string;
+  scheduled_end: string;
 }
 
 /**
@@ -309,6 +313,10 @@ async function fetchTriggers(): Promise<Trigger[] | null> {
         created_at: (t.created_at as string) || "",
         status: (t.status as string) || "unknown",
         last_execution_status: (t.last_execution_status as string) || "unknown",
+        frequency: (t.frequency as string) || "",
+        next_run_at: (t.next_run_at as string) || "",
+        recipient_email: (t.recipient_email as string) || "",
+        scheduled_end: (t.scheduled_end as string) || "",
       })
     );
     // Sort by created_at descending (most recent first)
@@ -319,6 +327,49 @@ async function fetchTriggers(): Promise<Trigger[] | null> {
     return arr;
   } catch {
     return null;
+  }
+}
+
+/**
+ * PATCH a trigger (edit fields).
+ */
+async function patchTrigger(
+  id: string,
+  fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status">>
+): Promise<boolean> {
+  try {
+    const res = await fetch(TRIGGERS_URL, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...fields }),
+    });
+    if (!res.ok) return false;
+    const text = await res.text();
+    if (!text) return true;
+    const json = JSON.parse(text);
+    return json?.ok !== false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * DELETE a trigger.
+ */
+async function deleteTriggerApi(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(TRIGGERS_URL, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (!res.ok) return false;
+    const text = await res.text();
+    if (!text) return true;
+    const json = JSON.parse(text);
+    return json?.ok !== false;
+  } catch {
+    return false;
   }
 }
 
@@ -424,6 +475,7 @@ export function useAgent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadingFileName, setUploadingFileName] = useState("");
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [detailMilestone, setDetailMilestone] = useState<Milestone | null>(null);
   const [previewMilestone, setPreviewMilestone] = useState<Milestone | null>(null);
@@ -514,8 +566,23 @@ export function useAgent() {
 
   const sendMessage = useCallback(
     async (text: string) => {
-      // 1. Append user message
-      const userMsg: ChatMessage = { id: uid(), role: "user", content: text };
+      // Build the request payload for debug visibility
+      const sessionId = getOrCreateSessionId();
+      const requestPayload = {
+        action: "sendMessage",
+        session_id: sessionId,
+        sessionId,
+        message: text,
+        chatInput: text,
+      };
+
+      // 1. Append user message with raw request
+      const userMsg: ChatMessage = {
+        id: uid(),
+        role: "user",
+        content: text,
+        rawJson: requestPayload,
+      };
       setMessages((prev) => [...prev, userMsg]);
       setIsProcessing(true);
 
@@ -534,6 +601,7 @@ export function useAgent() {
             id: uid(),
             role: "assistant",
             content: replyText,
+            rawJson: responseArray,
           };
           setMessages((prev) => [...prev, assistantMsg]);
           logExecution("AI agent responded");
@@ -590,6 +658,7 @@ export function useAgent() {
       };
       setMessages((prev) => [...prev, uploadingMsg]);
       setIsUploading(true);
+      setUploadingFileName(file.name);
 
       try {
         // 3. Build multipart/form-data payload
@@ -645,6 +714,7 @@ export function useAgent() {
         logExecution(`Upload error: ${file.name}`);
       } finally {
         setIsUploading(false);
+        setUploadingFileName("");
       }
     },
     [logExecution, refreshData]
@@ -658,6 +728,41 @@ export function useAgent() {
       logExecution("Record deleted");
     },
     [logExecution]
+  );
+
+  // ── Trigger actions ─────────────────────────────────────────────────────
+
+  const updateTrigger = useCallback(
+    async (
+      id: string,
+      fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status">>
+    ): Promise<boolean> => {
+      const ok = await patchTrigger(id, fields);
+      if (ok) {
+        // Optimistic: patch local state immediately
+        setTriggers((prev) =>
+          prev.map((t) => (t.id === id ? { ...t, ...fields } : t))
+        );
+        logExecution(`Trigger updated: ${fields.label || id}`);
+        // Also re-fetch to get server-truth
+        await refreshTriggers();
+      }
+      return ok;
+    },
+    [logExecution, refreshTriggers]
+  );
+
+  const deleteTrigger = useCallback(
+    async (id: string): Promise<boolean> => {
+      const ok = await deleteTriggerApi(id);
+      if (ok) {
+        setTriggers((prev) => prev.filter((t) => t.id !== id));
+        logExecution("Trigger deleted");
+        await refreshTriggers();
+      }
+      return ok;
+    },
+    [logExecution, refreshTriggers]
   );
 
   // ── CSV export ───────────────────────────────────────────────────────────
@@ -697,6 +802,7 @@ export function useAgent() {
     isProcessing,
     isExporting,
     isUploading,
+    uploadingFileName,
     isRefreshing,
     isInitialLoading,
     fetchError,
@@ -712,5 +818,7 @@ export function useAgent() {
     createCsvExport,
     refreshData,
     deleteMilestone,
+    updateTrigger,
+    deleteTrigger,
   };
 }
