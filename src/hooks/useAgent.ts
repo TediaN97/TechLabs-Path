@@ -125,7 +125,7 @@ const FILE_UPLOAD_URL =
 
 /** Production API endpoint for fetching triggers */
 const TRIGGERS_URL =
-  "https://vltechpath.app.n8n.cloud/webhook/triggers";
+  "https://20.110.72.120.nip.io/webhook/triggers";
 
 const REFRESH_INTERVAL_MS = 30_000;
 
