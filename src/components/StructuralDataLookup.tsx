@@ -8,6 +8,69 @@ interface SortConfig {
   direction: SortDirection;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface StructureData {
+  min_structure: {
+    legal?: { venue_state?: string | null; governing_law_state?: string | null };
+    parties?: {
+      lender?: { legal_name?: string | null; lender_id?: string | null };
+      borrower?: { legal_name?: string | null; borrower_id?: string | null; entity_type?: string | null };
+    };
+    covenants?: {
+      financial?: { minimum_dscr?: number | null; interest_reserve_required?: boolean | null };
+      reporting?: { reporting_frequency?: string | null; financial_statements_required?: boolean | null };
+    };
+    collateral?: {
+      secured?: boolean | null;
+      property?: {
+        city?: string | null; state?: string | null; address?: string | null;
+        postal_code?: string | null; property_id?: string | null; property_type?: string | null;
+      };
+      security_instruments?: {
+        ucc_fixtures_filed?: boolean | null; assignment_of_rents?: boolean | null;
+        mortgage_or_deed_of_trust?: boolean | null;
+      };
+    };
+    guaranties?: {
+      guarantor_count?: number | null; payment_guaranty_required?: boolean | null;
+      completion_guaranty_required?: boolean | null;
+    };
+    loan_terms?: {
+      interest?: {
+        rate_type?: string | null; index_name?: string | null;
+        spread_bps?: number | null; floor_rate_percent?: number | null; default_rate_margin_bps?: number | null;
+      };
+      loan_type?: string | null; closing_date?: string | null; maturity_date?: string | null;
+      commitment_amount?: { amount?: number | null; currency?: string | null };
+      extension_options?: { available?: boolean | null; max_extension_period_months?: number | null };
+    };
+    disbursement?: {
+      advance_method?: string | null; draw_frequency?: string | null;
+      inspection_required?: boolean | null; title_update_required?: boolean | null;
+      initial_conditions_precedent?: { required?: boolean | null };
+    };
+    construction_terms?: {
+      project_type?: string | null;
+      approved_budget?: { amount?: number | null; currency?: string | null };
+      retainage_percent?: number | null; loan_to_cost_ratio_percent?: number | null;
+      loan_to_value_ratio_percent?: number | null; completion_guaranty_required?: boolean | null;
+    };
+    defaults_and_remedies?: {
+      cross_default?: boolean | null; events_of_default_defined?: boolean | null;
+      remedies_include_foreclosure?: boolean | null;
+    };
+    schema_name?: string | null;
+    agreement_type_code?: string | null;
+  } | null;
+  max_structure: {
+    feature_name: string;
+    category: string;
+    description: string;
+    impact_level: string;
+    supporting_text: string;
+  }[] | null;
+}
+
 interface ImportantInfoData {
   agreement_title: string | null;
   effective_date: string | null;
@@ -188,6 +251,29 @@ function formatDateDDMMYYYY(raw: string | null): string | null {
   return `${dd}.${mm}.${yyyy}`;
 }
 
+function formatCurrency(amount: number | null | undefined, currency?: string | null): string {
+  if (amount == null) return "—";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD", maximumFractionDigits: 0 }).format(amount);
+}
+
+function boolLabel(v: boolean | null | undefined): string {
+  if (v == null) return "—";
+  return v ? "Yes" : "No";
+}
+
+function capitalize(s: string | null | undefined): string {
+  if (!s) return "—";
+  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function getImpactBadge(level: string): string {
+  const l = level.toLowerCase();
+  if (l === "critical") return "bg-red-100 text-red-700 border border-red-200";
+  if (l === "high") return "bg-[#6556d2]/10 text-[#6556d2] border border-[#6556d2]/20";
+  if (l === "medium") return "bg-amber-100 text-amber-700 border border-amber-200";
+  return "bg-blue-100 text-blue-700 border border-blue-200";
+}
+
 function formatTime(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -257,44 +343,416 @@ function ModalShell({
   );
 }
 
-// ── Detail Modal ───────────────────────────────────────────────────────────────
+// ── Detail Modal (Structure Analysis) ─────────────────────────────────────────
 
-function DetailPanel({ milestone, onClose }: { milestone: Milestone; onClose: () => void }) {
+type DetailTab = "overview" | "features" | "technical";
+
+function FieldValue({ value }: { value: string | number | null | undefined }) {
+  const display = value == null || value === "" ? null : String(value);
+  return display ? (
+    <p className="mt-1 text-sm text-gray-700 leading-relaxed">{display}</p>
+  ) : (
+    <p className="mt-1 text-sm text-gray-400">—</p>
+  );
+}
+
+function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <ModalShell title="Record Detail" onClose={onClose}>
-      <div className="space-y-4 text-xs">
-        <div>
-          <span className="font-semibold text-gray-500 uppercase tracking-wider">Document ID</span>
-          <p className="mt-1 text-gray-700 font-mono text-[11px] break-all">{milestone.document_id || milestone.id}</p>
+    <div className="rounded-lg border border-gray-100 bg-white">
+      <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
+        <h4 className="text-xs font-semibold text-[#6556d2] uppercase tracking-wider">{title}</h4>
+      </div>
+      <div className="px-4 py-3">{children}</div>
+    </div>
+  );
+}
+
+function FeatureCard({ feature, defaultOpen }: {
+  feature: { feature_name: string; category: string; description: string; impact_level: string; supporting_text: string };
+  defaultOpen?: boolean;
+}) {
+  const [showSource, setShowSource] = useState(defaultOpen ?? false);
+  return (
+    <div className="rounded-lg border border-gray-100 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-gray-800 leading-snug">{feature.feature_name}</p>
+          <span className="text-[10px] text-gray-400 uppercase tracking-wider">{feature.category}</span>
         </div>
-        <div>
-          <span className="font-semibold text-gray-500 uppercase tracking-wider">File Name</span>
-          <p className="mt-1 text-gray-700">{milestone.file_name}</p>
+        <span className={`inline-block px-2 py-0.5 text-[10px] font-semibold rounded-full whitespace-nowrap ${getImpactBadge(feature.impact_level)}`}>
+          {feature.impact_level}
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-gray-600 leading-relaxed">{feature.description}</p>
+      {feature.supporting_text && (
+        <div className="mt-2">
+          <button
+            onClick={() => setShowSource((v) => !v)}
+            className="text-[11px] font-medium text-[#6556d2] hover:text-[#5445b5] cursor-pointer"
+          >
+            {showSource ? "Hide Source Text ▲" : "Show Source Text ▼"}
+          </button>
+          {showSource && (
+            <div className="mt-1.5 rounded-md bg-[#6556d2]/5 border border-[#6556d2]/10 px-3 py-2">
+              <p className="text-[11px] text-gray-600 leading-relaxed italic">{feature.supporting_text}</p>
+            </div>
+          )}
         </div>
-        <div>
-          <span className="font-semibold text-gray-500 uppercase tracking-wider">Description</span>
-          <p className="mt-1 text-gray-700 leading-relaxed">{milestone.description}</p>
+      )}
+    </div>
+  );
+}
+
+function StructureDetailModal({
+  milestone,
+  data,
+  isLoading,
+  error,
+  onClose,
+}: {
+  milestone: Milestone;
+  data: StructureData | null;
+  isLoading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<DetailTab>("overview");
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  const min = data?.min_structure;
+  const features = data?.max_structure ?? [];
+
+  const tabs: { id: DetailTab; label: string; count?: number }[] = [
+    { id: "overview", label: "Basic Terms" },
+    { id: "features", label: "Key Features", count: features.length },
+    { id: "technical", label: "Covenants & Risk" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div
+        className="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 overflow-hidden max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-6 py-4 bg-[#6556d2] flex items-center justify-between flex-shrink-0">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-white truncate">{milestone.file_name}</h3>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-white/90 bg-white/20 rounded-full whitespace-nowrap flex-shrink-0">
+                <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
+                Verified Analysis
+              </span>
+            </div>
+            <p className="text-[11px] text-white/60 mt-0.5 font-mono truncate">{milestone.document_id || milestone.id}</p>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white cursor-pointer text-lg leading-none ml-4 flex-shrink-0">&times;</button>
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <span className="font-semibold text-gray-500 uppercase tracking-wider">Upload Date</span>
-            <p className="mt-1 text-gray-700">{formatUploadDate(milestone.upload_time)}</p>
-          </div>
-          <div>
-            <span className="font-semibold text-gray-500 uppercase tracking-wider">Status</span>
-            <p className="mt-1"><StatusBadge rawStatus={milestone.raw_status} /></p>
-          </div>
-          <div>
-            <span className="font-semibold text-gray-500 uppercase tracking-wider">Lender</span>
-            <p className="mt-1 text-gray-700">{milestone.lender}</p>
-          </div>
-          <div>
-            <span className="font-semibold text-gray-500 uppercase tracking-wider">Borrower</span>
-            <p className="mt-1 text-gray-700">{milestone.borrower}</p>
-          </div>
+
+        {/* Tab bar */}
+        <div className="px-6 border-b border-gray-200 flex gap-0 flex-shrink-0 bg-gray-50/50">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors cursor-pointer whitespace-nowrap ${
+                activeTab === tab.id
+                  ? "border-[#6556d2] text-[#6556d2]"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              {tab.label}
+              {tab.count != null && tab.count > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-[16px] px-1 text-[10px] font-semibold rounded-full bg-[#6556d2]/10 text-[#6556d2]">
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Content area */}
+        <div className="overflow-auto flex-1 px-6 py-5">
+          {isLoading && (
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <svg className="h-8 w-8 animate-spin text-[#6556d2]" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-sm text-gray-400">Loading structural analysis...</span>
+            </div>
+          )}
+
+          {error && !isLoading && (
+            <div className="flex flex-col items-center justify-center py-16 gap-2">
+              <svg className="h-8 w-8 text-red-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-sm text-red-500 font-medium">Failed to load structural data</p>
+              <p className="text-xs text-gray-400">{error}</p>
+            </div>
+          )}
+
+          {data && !isLoading && !min && features.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-16 gap-2">
+              <p className="text-sm text-gray-400">No structural data available for this document.</p>
+            </div>
+          )}
+
+          {/* ── TAB: Basic Terms ── */}
+          {data && !isLoading && activeTab === "overview" && (
+            <div className="space-y-5">
+              {/* Parties */}
+              <SectionCard title="Parties">
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Lender</span>
+                    <FieldValue value={min?.parties?.lender?.legal_name} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Borrower</span>
+                    <FieldValue value={min?.parties?.borrower?.legal_name} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Borrower Entity Type</span>
+                    <FieldValue value={capitalize(min?.parties?.borrower?.entity_type)} />
+                  </div>
+                </div>
+              </SectionCard>
+
+              {/* Loan Terms */}
+              <SectionCard title="Loan Terms">
+                <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Commitment Amount</span>
+                    <FieldValue value={formatCurrency(min?.loan_terms?.commitment_amount?.amount, min?.loan_terms?.commitment_amount?.currency)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Loan Type</span>
+                    <FieldValue value={capitalize(min?.loan_terms?.loan_type)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Maturity Date</span>
+                    <FieldValue value={formatDateDDMMYYYY(min?.loan_terms?.maturity_date ?? null) ?? "—"} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Interest Rate Type</span>
+                    <FieldValue value={capitalize(min?.loan_terms?.interest?.rate_type)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Index</span>
+                    <FieldValue value={min?.loan_terms?.interest?.index_name} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Spread (bps)</span>
+                    <FieldValue value={min?.loan_terms?.interest?.spread_bps != null ? `${min.loan_terms.interest.spread_bps} bps` : null} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Extension Available</span>
+                    <FieldValue value={boolLabel(min?.loan_terms?.extension_options?.available)} />
+                  </div>
+                </div>
+              </SectionCard>
+
+              {/* Legal */}
+              <SectionCard title="Legal">
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Governing Law</span>
+                    <FieldValue value={min?.legal?.governing_law_state} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Venue State</span>
+                    <FieldValue value={min?.legal?.venue_state} />
+                  </div>
+                </div>
+              </SectionCard>
+
+              {/* Construction Terms */}
+              {min?.construction_terms && (
+                <SectionCard title="Construction Terms">
+                  <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                    <div className="col-span-3">
+                      <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Project Type</span>
+                      <FieldValue value={capitalize(min.construction_terms.project_type)} />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Approved Budget</span>
+                      <FieldValue value={formatCurrency(min.construction_terms.approved_budget?.amount, min.construction_terms.approved_budget?.currency)} />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">LTC Ratio</span>
+                      <FieldValue value={min.construction_terms.loan_to_cost_ratio_percent != null ? `${min.construction_terms.loan_to_cost_ratio_percent}%` : null} />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">LTV Ratio</span>
+                      <FieldValue value={min.construction_terms.loan_to_value_ratio_percent != null ? `${min.construction_terms.loan_to_value_ratio_percent}%` : null} />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Retainage</span>
+                      <FieldValue value={min.construction_terms.retainage_percent != null ? `${min.construction_terms.retainage_percent}%` : null} />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Completion Guaranty</span>
+                      <FieldValue value={boolLabel(min.construction_terms.completion_guaranty_required)} />
+                    </div>
+                  </div>
+                </SectionCard>
+              )}
+            </div>
+          )}
+
+          {/* ── TAB: Key Features ── */}
+          {data && !isLoading && activeTab === "features" && (
+            <div className="space-y-3">
+              {features.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-10">No key features extracted for this document.</p>
+              ) : (
+                features.map((f, i) => <FeatureCard key={i} feature={f} />)
+              )}
+            </div>
+          )}
+
+          {/* ── TAB: Covenants & Risk ── */}
+          {data && !isLoading && activeTab === "technical" && (
+            <div className="space-y-5">
+              {/* Financial Covenants */}
+              <SectionCard title="Financial Covenants">
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Minimum DSCR</span>
+                    <FieldValue value={min?.covenants?.financial?.minimum_dscr != null ? `${min.covenants.financial.minimum_dscr}x` : null} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Interest Reserve Required</span>
+                    <FieldValue value={boolLabel(min?.covenants?.financial?.interest_reserve_required)} />
+                  </div>
+                </div>
+              </SectionCard>
+
+              {/* Reporting Covenants */}
+              <SectionCard title="Reporting Covenants">
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Reporting Frequency</span>
+                    <FieldValue value={capitalize(min?.covenants?.reporting?.reporting_frequency)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Financial Statements Required</span>
+                    <FieldValue value={boolLabel(min?.covenants?.reporting?.financial_statements_required)} />
+                  </div>
+                </div>
+              </SectionCard>
+
+              {/* Collateral */}
+              <SectionCard title="Collateral">
+                <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Secured</span>
+                    <FieldValue value={boolLabel(min?.collateral?.secured)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Property Type</span>
+                    <FieldValue value={capitalize(min?.collateral?.property?.property_type)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Location</span>
+                    <FieldValue value={[min?.collateral?.property?.city, min?.collateral?.property?.state].filter(Boolean).join(", ") || null} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Deed of Trust / Mortgage</span>
+                    <FieldValue value={boolLabel(min?.collateral?.security_instruments?.mortgage_or_deed_of_trust)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Assignment of Rents</span>
+                    <FieldValue value={boolLabel(min?.collateral?.security_instruments?.assignment_of_rents)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">UCC Fixtures Filed</span>
+                    <FieldValue value={boolLabel(min?.collateral?.security_instruments?.ucc_fixtures_filed)} />
+                  </div>
+                </div>
+              </SectionCard>
+
+              {/* Disbursement */}
+              <SectionCard title="Disbursement Rules">
+                <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Advance Method</span>
+                    <FieldValue value={capitalize(min?.disbursement?.advance_method)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Draw Frequency</span>
+                    <FieldValue value={capitalize(min?.disbursement?.draw_frequency)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Inspection Required</span>
+                    <FieldValue value={boolLabel(min?.disbursement?.inspection_required)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Title Update Required</span>
+                    <FieldValue value={boolLabel(min?.disbursement?.title_update_required)} />
+                  </div>
+                </div>
+              </SectionCard>
+
+              {/* Guaranties */}
+              <SectionCard title="Guaranties">
+                <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Guarantor Count</span>
+                    <FieldValue value={min?.guaranties?.guarantor_count} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Payment Guaranty</span>
+                    <FieldValue value={boolLabel(min?.guaranties?.payment_guaranty_required)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Completion Guaranty</span>
+                    <FieldValue value={boolLabel(min?.guaranties?.completion_guaranty_required)} />
+                  </div>
+                </div>
+              </SectionCard>
+
+              {/* Defaults & Remedies */}
+              <SectionCard title="Defaults & Remedies">
+                <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Events of Default Defined</span>
+                    <FieldValue value={boolLabel(min?.defaults_and_remedies?.events_of_default_defined)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Cross Default</span>
+                    <FieldValue value={boolLabel(min?.defaults_and_remedies?.cross_default)} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Remedies Include Foreclosure</span>
+                    <FieldValue value={boolLabel(min?.defaults_and_remedies?.remedies_include_foreclosure)} />
+                  </div>
+                </div>
+              </SectionCard>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t border-gray-100 flex justify-end flex-shrink-0 bg-gray-50/50">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-xs font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
+          >
+            Close
+          </button>
         </div>
       </div>
-    </ModalShell>
+    </div>
   );
 }
 
@@ -723,6 +1181,39 @@ export default function StructuralDataLookup({
   const [aiMilestone, setAiMilestone] = useState<Milestone | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "upload_time", direction: "desc" });
 
+  // Structure Detail modal state
+  const [structDetailMilestone, setStructDetailMilestone] = useState<Milestone | null>(null);
+  const [structDetailData, setStructDetailData] = useState<StructureData | null>(null);
+  const [structDetailLoading, setStructDetailLoading] = useState(false);
+  const [structDetailError, setStructDetailError] = useState<string | null>(null);
+
+  const handleDetail = useCallback(async (entry: Milestone) => {
+    const docId = entry.document_id || entry.id;
+    setStructDetailMilestone(entry);
+    setStructDetailData(null);
+    setStructDetailError(null);
+    setStructDetailLoading(true);
+    try {
+      const res = await fetch(
+        `https://20.110.72.120.nip.io/webhook/getStructureByID?document_id=${encodeURIComponent(docId)}`
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      if (!text) {
+        // Empty response — show modal with empty state
+        setStructDetailData({ min_structure: null, max_structure: null });
+      } else {
+        const json = JSON.parse(text);
+        const payload = Array.isArray(json) ? json[0] ?? {} : json;
+        setStructDetailData(payload as StructureData);
+      }
+    } catch (err: unknown) {
+      setStructDetailError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setStructDetailLoading(false);
+    }
+  }, []);
+
   // AI Analyzed modal state
   const [aiAnalyzedMilestone, setAiAnalyzedMilestone] = useState<Milestone | null>(null);
   const [aiAnalyzedData, setAiAnalyzedData] = useState<AiDeadlinesData | null>(null);
@@ -992,7 +1483,7 @@ export default function StructuralDataLookup({
                         <div className="flex items-center justify-end gap-2">
                           {/* 1. Detail Icon */}
                           <button
-                            onClick={() => onDetailStruct(entry)}
+                            onClick={() => handleDetail(entry)}
                             title="Detail"
                             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer whitespace-nowrap"
                           >
@@ -1069,8 +1560,14 @@ export default function StructuralDataLookup({
       </div>
 
       {/* Modals */}
-      {detailMilestone && (
-        <DetailPanel milestone={detailMilestone} onClose={() => onDetailStruct(null)} />
+      {structDetailMilestone && (
+        <StructureDetailModal
+          milestone={structDetailMilestone}
+          data={structDetailData}
+          isLoading={structDetailLoading}
+          error={structDetailError}
+          onClose={() => setStructDetailMilestone(null)}
+        />
       )}
       {vectorMilestone && (
         <VectorDeadlinesPanel milestone={vectorMilestone} onClose={() => setVectorMilestone(null)} />
