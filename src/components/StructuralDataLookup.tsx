@@ -8,6 +8,24 @@ interface SortConfig {
   direction: SortDirection;
 }
 
+interface ImportantInfoData {
+  agreement_title: string | null;
+  effective_date: string | null;
+  borrower_name: string | null;
+  borrower_entity_type: string | null;
+  borrower_jurisdiction: string | null;
+  lender_name: string | null;
+  security_collateral_description: string | null;
+  governing_law: string | null;
+  administrative_agent_name: string | null;
+}
+
+interface AiDeadlinesData {
+  effective_date: string | null;
+  maturity_date: string | null;
+  construction_completion_deadline: string | null;
+}
+
 // ── Icons ──────────────────────────────────────────────────────────────────────
 
 function SearchIcon() {
@@ -68,6 +86,17 @@ function SparklesIcon() {
   return (
     <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
       <path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg className="h-4 w-4 text-[#6556d2]" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
     </svg>
   );
 }
@@ -147,6 +176,16 @@ function formatUploadDate(iso: string): string {
   const hh = String(d.getHours()).padStart(2, "0");
   const min = String(d.getMinutes()).padStart(2, "0");
   return `${dd}.${mm}.${yyyy} ${hh}:${min}`;
+}
+
+function formatDateDDMMYYYY(raw: string | null): string | null {
+  if (!raw) return null;
+  const d = new Date(raw.includes("T") ? raw : raw + "T00:00:00");
+  if (isNaN(d.getTime())) return raw; // return as-is if unparseable
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}.${mm}.${yyyy}`;
 }
 
 function formatTime(iso: string): string {
@@ -271,16 +310,16 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+        <div className="px-6 py-4 bg-[#6556d2] flex items-center justify-between flex-shrink-0">
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-gray-800">Vectorized Deadlines</h3>
-            <p className="text-[11px] text-gray-400 mt-0.5 truncate" title={milestone.file_name}>
+            <h3 className="text-sm font-semibold text-white">Vectorized Deadlines</h3>
+            <p className="text-[11px] text-white/70 mt-0.5 truncate" title={milestone.file_name}>
               {milestone.file_name}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 cursor-pointer text-lg leading-none ml-4 flex-shrink-0"
+            className="text-white/70 hover:text-white cursor-pointer text-lg leading-none ml-4 flex-shrink-0"
           >
             &times;
           </button>
@@ -339,7 +378,7 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
           </span>
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors cursor-pointer"
+            className="px-4 py-1.5 text-xs font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
           >
             Close
           </button>
@@ -420,6 +459,235 @@ function AiDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClos
   );
 }
 
+// ── AI Analyzed Deadlines Modal ──────────────────────────────────────────────
+
+function AiAnalyzedModal({
+  milestone,
+  data,
+  isLoading,
+  error,
+  onClose,
+}: {
+  milestone: Milestone;
+  data: AiDeadlinesData | null;
+  isLoading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  const dateRows: { label: string; value: string | null }[] = data
+    ? [
+        { label: "Effective Date", value: formatDateDDMMYYYY(data.effective_date) },
+        { label: "Maturity Date", value: formatDateDDMMYYYY(data.maturity_date) },
+        { label: "Construction Completion Deadline", value: formatDateDDMMYYYY(data.construction_completion_deadline) },
+      ]
+    : [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div
+        className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-6 py-4 bg-[#6556d2] flex items-center justify-between flex-shrink-0">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-white">AI Analyzed Deadlines</h3>
+            <p className="text-[11px] text-white/70 mt-0.5 truncate" title={milestone.file_name}>
+              {milestone.file_name}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-white/70 hover:text-white cursor-pointer text-lg leading-none ml-4 flex-shrink-0"
+          >
+            &times;
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="px-6 py-5">
+          {isLoading && (
+            <div className="flex flex-col items-center justify-center py-10 gap-3">
+              <svg className="h-8 w-8 animate-spin text-[#6556d2]" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-sm text-gray-400">Analyzing deadlines...</span>
+            </div>
+          )}
+
+          {error && !isLoading && (
+            <div className="flex flex-col items-center justify-center py-8 gap-2">
+              <svg className="h-8 w-8 text-red-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-sm text-red-500 font-medium">Failed to load deadlines</p>
+              <p className="text-xs text-gray-400">{error}</p>
+            </div>
+          )}
+
+          {data && !isLoading && (
+            <div className="space-y-4">
+              {dateRows.map((row) => (
+                <div
+                  key={row.label}
+                  className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50/50 px-4 py-3"
+                >
+                  <CalendarIcon />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[11px] font-semibold text-[#6556d2] uppercase tracking-wider">
+                      {row.label}
+                    </span>
+                    {row.value ? (
+                      <p className="mt-0.5 text-sm font-medium text-gray-700">{row.value}</p>
+                    ) : (
+                      <p className="mt-0.5 text-sm text-gray-400 italic">Not detected</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t border-gray-100 flex justify-end flex-shrink-0 bg-gray-50/50">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-xs font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Important Info Modal ──────────────────────────────────────────────────────
+
+function ImportantInfoModal({
+  milestone,
+  data,
+  isLoading,
+  error,
+  onClose,
+}: {
+  milestone: Milestone;
+  data: ImportantInfoData | null;
+  isLoading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  const fields: { label: string; value: string }[] = data
+    ? [
+        { label: "Agreement Title", value: data.agreement_title ?? "" },
+        { label: "Effective Date", value: data.effective_date ?? "" },
+        {
+          label: "Borrower",
+          value: data.borrower_name
+            ? `${data.borrower_name}${data.borrower_entity_type || data.borrower_jurisdiction ? ` (${[data.borrower_entity_type, data.borrower_jurisdiction].filter(Boolean).join(" in ")})` : ""}`
+            : "",
+        },
+        { label: "Lender(s)", value: data.lender_name ?? "" },
+        { label: "Collateral", value: data.security_collateral_description ?? "" },
+        { label: "Governing Law", value: data.governing_law ?? "" },
+        { label: "Admin Agent", value: data.administrative_agent_name ?? "" },
+      ]
+    : [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div
+        className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 overflow-hidden max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-6 py-4 bg-[#6556d2] flex items-center justify-between flex-shrink-0">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-white">Important information</h3>
+            <p className="text-[11px] text-white/70 mt-0.5 truncate" title={milestone.file_name}>
+              {milestone.file_name}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-white/70 hover:text-white cursor-pointer text-lg leading-none ml-4 flex-shrink-0"
+          >
+            &times;
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="overflow-auto flex-1 px-6 py-5">
+          {isLoading && (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <svg className="h-8 w-8 animate-spin text-[#6556d2]" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-sm text-gray-400">Fetching document analysis...</span>
+            </div>
+          )}
+
+          {error && !isLoading && (
+            <div className="flex flex-col items-center justify-center py-12 gap-2">
+              <svg className="h-8 w-8 text-red-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-sm text-red-500 font-medium">Failed to load document info</p>
+              <p className="text-xs text-gray-400">{error}</p>
+            </div>
+          )}
+
+          {data && !isLoading && (
+            <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+              {fields.map((f) => (
+                <div key={f.label} className={f.label === "Collateral" ? "col-span-2" : ""}>
+                  <span className="text-[11px] font-semibold text-[#6556d2] uppercase tracking-wider">
+                    {f.label}
+                  </span>
+                  {f.value ? (
+                    <p className="mt-1 text-sm text-gray-700 leading-relaxed">{f.value}</p>
+                  ) : (
+                    <p className="mt-1 text-sm text-gray-400 italic">Not specified</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t border-gray-100 flex justify-end flex-shrink-0 bg-gray-50/50">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-xs font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 const RECORDS_PER_PAGE = 10;
@@ -454,6 +722,61 @@ export default function StructuralDataLookup({
   const [vectorMilestone, setVectorMilestone] = useState<Milestone | null>(null);
   const [aiMilestone, setAiMilestone] = useState<Milestone | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "upload_time", direction: "desc" });
+
+  // AI Analyzed modal state
+  const [aiAnalyzedMilestone, setAiAnalyzedMilestone] = useState<Milestone | null>(null);
+  const [aiAnalyzedData, setAiAnalyzedData] = useState<AiDeadlinesData | null>(null);
+  const [aiAnalyzedLoading, setAiAnalyzedLoading] = useState(false);
+  const [aiAnalyzedError, setAiAnalyzedError] = useState<string | null>(null);
+
+  const handleAiAnalyzed = useCallback(async (entry: Milestone) => {
+    const docId = entry.document_id || entry.id;
+    setAiAnalyzedMilestone(entry);
+    setAiAnalyzedData(null);
+    setAiAnalyzedError(null);
+    setAiAnalyzedLoading(true);
+    try {
+      const res = await fetch(
+        `https://20.110.72.120.nip.io/webhook/get-deadlines/AIdeadlines/${encodeURIComponent(docId)}`
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const payload = Array.isArray(json) ? json[0] ?? {} : json;
+      setAiAnalyzedData(payload as AiDeadlinesData);
+    } catch (err: unknown) {
+      setAiAnalyzedError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setAiAnalyzedLoading(false);
+    }
+  }, []);
+
+  // Important Info modal state
+  const [importantInfoMilestone, setImportantInfoMilestone] = useState<Milestone | null>(null);
+  const [importantInfoData, setImportantInfoData] = useState<ImportantInfoData | null>(null);
+  const [importantInfoLoading, setImportantInfoLoading] = useState(false);
+  const [importantInfoError, setImportantInfoError] = useState<string | null>(null);
+
+  const handleImportantInfo = useCallback(async (entry: Milestone) => {
+    const docId = entry.document_id || entry.id;
+    setImportantInfoMilestone(entry);
+    setImportantInfoData(null);
+    setImportantInfoError(null);
+    setImportantInfoLoading(true);
+    try {
+      const res = await fetch(
+        `https://20.110.72.120.nip.io/webhook/get-deadlines/importantInfo/${encodeURIComponent(docId)}`
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      // Accept either the root object or first array element
+      const payload = Array.isArray(json) ? json[0] ?? {} : json;
+      setImportantInfoData(payload as ImportantInfoData);
+    } catch (err: unknown) {
+      setImportantInfoError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setImportantInfoLoading(false);
+    }
+  }, []);
 
   const handleSort = useCallback((key: SortKey) => {
     setSortConfig((prev) =>
@@ -677,12 +1000,12 @@ export default function StructuralDataLookup({
                           </button>
                           {/* 2. Deadlines Dropdown */}
                           <DeadlinesDropdown
-                            onAiDeadlines={() => setAiMilestone(entry)}
+                            onAiDeadlines={() => handleAiAnalyzed(entry)}
                             onVectorDeadlines={() => setVectorMilestone(entry)}
                           />
                           {/* 3. Important Info Button */}
                           <button
-                            onClick={() => setAiMilestone(entry)}
+                            onClick={() => handleImportantInfo(entry)}
                             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer whitespace-nowrap"
                           >
                             <SparklesIcon />
@@ -754,6 +1077,24 @@ export default function StructuralDataLookup({
       )}
       {aiMilestone && (
         <AiDeadlinesPanel milestone={aiMilestone} onClose={() => setAiMilestone(null)} />
+      )}
+      {aiAnalyzedMilestone && (
+        <AiAnalyzedModal
+          milestone={aiAnalyzedMilestone}
+          data={aiAnalyzedData}
+          isLoading={aiAnalyzedLoading}
+          error={aiAnalyzedError}
+          onClose={() => setAiAnalyzedMilestone(null)}
+        />
+      )}
+      {importantInfoMilestone && (
+        <ImportantInfoModal
+          milestone={importantInfoMilestone}
+          data={importantInfoData}
+          isLoading={importantInfoLoading}
+          error={importantInfoError}
+          onClose={() => setImportantInfoMilestone(null)}
+        />
       )}
     </>
   );
