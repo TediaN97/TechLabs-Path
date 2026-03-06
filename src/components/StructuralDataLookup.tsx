@@ -8,7 +8,6 @@ interface SortConfig {
   direction: SortDirection;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 interface StructureData {
   min_structure: {
     legal?: { venue_state?: string | null; governing_law_state?: string | null };
@@ -277,24 +276,6 @@ function getImpactBadge(level: string): string {
 function formatTime(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
-function getStatusStyle(raw: string): string {
-  const s = raw.toLowerCase();
-  if (s === "vectorized") return "bg-green-100 text-green-700 border border-green-200";
-  if (s === "error" || s === "failed") return "bg-red-100 text-red-700 border border-red-200";
-  if (s === "processing" || s === "uploading") return "bg-blue-100 text-blue-700 border border-blue-200";
-  return "bg-gray-100 text-gray-600 border border-gray-200";
-}
-
-function StatusBadge({ rawStatus }: { rawStatus: string }) {
-  return (
-    <span
-      className={`inline-block px-2 py-0.5 text-[11px] font-medium rounded-full whitespace-nowrap ${getStatusStyle(rawStatus)}`}
-    >
-      {rawStatus}
-    </span>
-  );
 }
 
 // ── Skeleton ───────────────────────────────────────────────────────────────────
@@ -1169,8 +1150,6 @@ export default function StructuralDataLookup({
   isRefreshing,
   lastRefreshed,
   fetchError,
-  detailMilestone,
-  onDetailStruct,
   onDelete,
   isUploading = false,
   uploadingFileName = "",
