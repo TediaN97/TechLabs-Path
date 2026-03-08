@@ -41,20 +41,75 @@ function SendIcon() {
 //   );
 // }
 
-// ── Typing indicator ────────────────────────────────────────────────────────────
+// ── Thinking status messages ─────────────────────────────────────────────────
 
-function TypingIndicator() {
+const THINKING_STEPS = [
+  { message: "Analyzing your request...", delay: 0 },
+  { message: "Scanning document context...", delay: 4000 },
+  { message: "Extracting relevant data points...", delay: 8000 },
+  { message: "Synthesizing final answer...", delay: 12000 },
+  { message: "Almost there, double-checking details...", delay: 16000 },
+];
+
+/** Threshold: show thinking messages immediately if prompt is long */
+const COMPLEX_PROMPT_LENGTH = 100;
+/** Threshold: show thinking messages after this many ms for short prompts */
+const THINKING_DELAY_MS = 3000;
+
+function ThinkingIndicator({ showImmediately }: { showImmediately: boolean }) {
+  const [stepIdx, setStepIdx] = useState(0);
+  const [visible, setVisible] = useState(showImmediately);
+  const startRef = useRef(Date.now());
+
+  useEffect(() => {
+    startRef.current = Date.now();
+    setStepIdx(0);
+    if (showImmediately) {
+      setVisible(true);
+    }
+  }, [showImmediately]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const elapsed = Date.now() - startRef.current;
+
+      // For short prompts, only show after THINKING_DELAY_MS
+      if (!showImmediately && !visible && elapsed >= THINKING_DELAY_MS) {
+        setVisible(true);
+      }
+
+      // Advance step based on elapsed time
+      for (let i = THINKING_STEPS.length - 1; i >= 0; i--) {
+        if (elapsed >= THINKING_STEPS[i].delay) {
+          setStepIdx(i);
+          break;
+        }
+      }
+    }, 500);
+    return () => clearInterval(id);
+  }, [showImmediately, visible]);
+
   return (
     <div className="flex items-start gap-2 mb-3">
       <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-500">
         AI
       </div>
       <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-white border border-gray-100 shadow-sm">
-        <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-gray-400 animate-pulse" />
-          <span className="h-2 w-2 rounded-full bg-gray-400 animate-pulse [animation-delay:0.2s]" />
-          <span className="h-2 w-2 rounded-full bg-gray-400 animate-pulse [animation-delay:0.4s]" />
-        </div>
+        {visible ? (
+          <div className="flex items-center gap-2">
+            <svg className="h-3.5 w-3.5 animate-spin text-[#6556d2] flex-shrink-0" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-sm italic text-gray-500">{THINKING_STEPS[stepIdx].message}</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-[#6556d2] animate-pulse" />
+            <span className="h-2 w-2 rounded-full bg-[#6556d2] animate-pulse [animation-delay:0.2s]" />
+            <span className="h-2 w-2 rounded-full bg-[#6556d2] animate-pulse [animation-delay:0.4s]" />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -117,6 +172,120 @@ function UploadProgressBubble({ fileName }: { fileName: string }) {
   );
 }
 
+// ── Table data detection & rendering ─────────────────────────────────────────
+
+interface TableData {
+  columns: string[];
+  rows: unknown[][];
+}
+
+/** ISO date pattern: 2024-01-15 or 2024-01-15T... */
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T|$)/;
+
+/** Looks like a number (including currency-prefixed like $1,234.56) */
+function isNumericValue(v: unknown): boolean {
+  if (typeof v === "number") return true;
+  if (typeof v !== "string") return false;
+  const cleaned = v.replace(/[$€£¥,\s]/g, "");
+  return cleaned.length > 0 && !isNaN(Number(cleaned));
+}
+
+/** Format ISO date string to DD.MM.YYYY */
+function formatDate(v: string): string {
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return v;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${d.getFullYear()}`;
+}
+
+/** Format a cell value for display */
+function formatCell(v: unknown): string {
+  if (v == null) return "—";
+  const s = String(v);
+  if (s === "") return "—";
+  if (ISO_DATE_RE.test(s)) return formatDate(s);
+  return s;
+}
+
+/**
+ * Extract table data from the rawJson response.
+ * Looks for { columns: [...], rows: [[...], ...] } in the response array.
+ */
+function extractTableData(rawJson: unknown): TableData | null {
+  if (!rawJson) return null;
+  const items = Array.isArray(rawJson) ? rawJson : [rawJson];
+  for (const item of items) {
+    if (item && typeof item === "object") {
+      const obj = item as Record<string, unknown>;
+      if (Array.isArray(obj.columns) && Array.isArray(obj.rows)) {
+        const columns = obj.columns.map(String);
+        const rows = (obj.rows as unknown[][]).map((row) =>
+          Array.isArray(row) ? row : columns.map((c) => (row as Record<string, unknown>)?.[c])
+        );
+        if (columns.length > 0) return { columns, rows };
+      }
+    }
+  }
+  return null;
+}
+
+function TableRenderer({ data }: { data: TableData }) {
+  return (
+    <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr>
+            {data.columns.map((col) => (
+              <th
+                key={col}
+                className="px-4 py-2 text-left text-xs font-semibold text-white uppercase tracking-wider bg-[#6556d2] border-b border-[#5445b5] whitespace-nowrap"
+              >
+                {col.replace(/_/g, " ")}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.rows.map((row, ri) => (
+            <tr
+              key={ri}
+              className={`${
+                ri % 2 === 0 ? "bg-white" : "bg-[#f8f7ff]"
+              } hover:bg-[#eeedfa] transition-colors`}
+            >
+              {row.map((cell, ci) => {
+                const formatted = formatCell(cell);
+                const numeric = isNumericValue(cell);
+                return (
+                  <td
+                    key={ci}
+                    className={`px-4 py-2 border-b border-slate-100 whitespace-nowrap ${
+                      numeric ? "text-right tabular-nums" : ""
+                    }`}
+                  >
+                    {formatted}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {data.rows.length === 0 && (
+            <tr>
+              <td
+                colSpan={data.columns.length}
+                className="px-4 py-4 text-center text-gray-400 italic"
+              >
+                No data rows returned.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ── JSON code block icon ─────────────────────────────────────────────────────
 
 function CodeIcon() {
@@ -134,6 +303,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
   const [showJson, setShowJson] = useState(false);
   const hasJson = message.rawJson != null;
+  const tableData = !isUser ? extractTableData(message.rawJson) : null;
 
   return (
     <div className={`flex items-start gap-2 mb-3 ${isUser ? "flex-row-reverse" : ""}`}>
@@ -152,17 +322,24 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         {isUser ? "You" : "AI"}
       </div>
 
-      {/* Bubble + optional JSON block */}
-      <div className={`max-w-[75%] ${isUser ? "text-right" : ""}`}>
+      {/* Bubble + optional table + optional JSON block */}
+      <div className={`${tableData ? "max-w-[90%]" : "max-w-[75%]"} ${isUser ? "text-right" : ""}`}>
         <div
           className={`px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
             isUser
               ? "bg-[#f0effb] text-[#3b2e7e] rounded-2xl rounded-tr-sm"
-              : "bg-white text-gray-700 border border-gray-100 shadow-sm rounded-2xl rounded-tl-sm"
+              : `bg-white text-gray-700 border border-gray-100 shadow-sm ${tableData ? "rounded-t-2xl rounded-tl-sm" : "rounded-2xl rounded-tl-sm"}`
           }`}
         >
           {message.content}
         </div>
+
+        {/* Structured data table */}
+        {tableData && (
+          <div className="bg-white border border-t-0 border-gray-100 shadow-sm rounded-b-2xl overflow-hidden pb-1">
+            <TableRenderer data={tableData} />
+          </div>
+        )}
 
         {/* Togglable JSON debug view */}
         {showJson && hasJson && (
@@ -296,7 +473,15 @@ export default function ChatInterface({
         ))}
 
         {isUploading && <UploadProgressBubble fileName={uploadingFileName} />}
-        {isLoading && <TypingIndicator />}
+        {isLoading && (
+          <ThinkingIndicator
+            showImmediately={
+              (messages.length > 0 &&
+                messages[messages.length - 1].role === "user" &&
+                messages[messages.length - 1].content.length > COMPLEX_PROMPT_LENGTH)
+            }
+          />
+        )}
       </div>
 
       {/* Input bar — pinned to bottom, grows upward */}
