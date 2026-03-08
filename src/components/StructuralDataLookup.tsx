@@ -1,4 +1,5 @@
 import { Fragment, useState, useRef, useMemo, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import type { Milestone, DeadlineEntry } from "../hooks/useAgent";
 
 type SortKey = "file_name" | "upload_time" | "lender" | "borrower";
@@ -70,17 +71,7 @@ interface StructureData {
   }[] | null;
 }
 
-interface ImportantInfoData {
-  agreement_title: string | null;
-  effective_date: string | null;
-  borrower_name: string | null;
-  borrower_entity_type: string | null;
-  borrower_jurisdiction: string | null;
-  lender_name: string | null;
-  security_collateral_description: string | null;
-  governing_law: string | null;
-  administrative_agent_name: string | null;
-}
+type ImportantInfoData = Record<string, unknown>;
 
 interface AiDeadlinesData {
   effective_date: string | null;
@@ -174,7 +165,7 @@ function Trash2Icon() {
   );
 }
 
-// ── Deadlines Dropdown ────────────────────────────────────────────────────────
+// ── Deadlines Dropdown (Portal-based to escape overflow clipping) ────────────
 
 function DeadlinesDropdown({
   onAiDeadlines,
@@ -184,12 +175,34 @@ function DeadlinesDropdown({
   onVectorDeadlines: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; direction: "down" | "up" }>({ top: 0, left: 0, direction: "down" });
 
+  // Compute menu position relative to viewport whenever it opens
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const menuHeight = 80; // approx height of 2 items + padding
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUp = spaceBelow < menuHeight + 8;
+
+    setPos({
+      top: openUp ? rect.top - menuHeight - 4 : rect.bottom + 4,
+      left: Math.max(8, rect.right - 160), // 160 = w-40
+      direction: openUp ? "up" : "down",
+    });
+  }, [open]);
+
+  // Close on outside click (check both button and portal menu)
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        btnRef.current && !btnRef.current.contains(target) &&
+        menuRef.current && !menuRef.current.contains(target)
+      ) {
         setOpen(false);
       }
     }
@@ -197,9 +210,18 @@ function DeadlinesDropdown({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
+  // Close on scroll so the menu doesn't float away
+  useEffect(() => {
+    if (!open) return;
+    const handleScroll = () => setOpen(false);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => window.removeEventListener("scroll", handleScroll, true);
+  }, [open]);
+
   return (
-    <div ref={ref} className="relative">
+    <>
       <button
+        ref={btnRef}
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
       >
@@ -207,23 +229,29 @@ function DeadlinesDropdown({
         Deadlines
         <ChevronDownIcon />
       </button>
-      {open && (
-        <div className="absolute right-0 mt-1 w-40 bg-white rounded-md shadow-lg border border-gray-200 py-1 z-20">
-          <button
-            onClick={() => { onAiDeadlines(); setOpen(false); }}
-            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#6556d2]/10 hover:text-[#6556d2] transition-colors cursor-pointer"
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="fixed w-40 bg-white rounded-md shadow-lg border border-gray-200 py-1 z-[9999] animate-[fadeIn_100ms_ease-out]"
+            style={{ top: pos.top, left: pos.left }}
           >
-            AI analyzed
-          </button>
-          <button
-            onClick={() => { onVectorDeadlines(); setOpen(false); }}
-            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#6556d2]/10 hover:text-[#6556d2] transition-colors cursor-pointer"
-          >
-            Vectorized
-          </button>
-        </div>
-      )}
-    </div>
+            <button
+              onClick={() => { onAiDeadlines(); setOpen(false); }}
+              className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#6556d2]/10 hover:text-[#6556d2] transition-colors cursor-pointer"
+            >
+              AI analyzed
+            </button>
+            <button
+              onClick={() => { onVectorDeadlines(); setOpen(false); }}
+              className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#6556d2]/10 hover:text-[#6556d2] transition-colors cursor-pointer"
+            >
+              Vectorized
+            </button>
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 
@@ -1013,6 +1041,19 @@ function AiAnalyzedModal({
 
 // ── Important Info Modal ──────────────────────────────────────────────────────
 
+/** IDs / technical keys hidden from the data grid */
+const HIDDEN_KEYS = new Set(["id", "created_at", "updated_at", "document_id"]);
+
+/** Convert snake_case key to a readable label  */
+function snakeCaseToLabel(key: string): string {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Heuristic: values longer than this threshold span both columns */
+const LONG_VALUE_THRESHOLD = 80;
+
 function ImportantInfoModal({
   milestone,
   data,
@@ -1034,36 +1075,30 @@ function ImportantInfoModal({
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  const fields: { label: string; value: string }[] = data
-    ? [
-        { label: "Agreement Title", value: data.agreement_title ?? "" },
-        { label: "Effective Date", value: data.effective_date ?? "" },
-        {
-          label: "Borrower",
-          value: data.borrower_name
-            ? `${data.borrower_name}${data.borrower_entity_type || data.borrower_jurisdiction ? ` (${[data.borrower_entity_type, data.borrower_jurisdiction].filter(Boolean).join(" in ")})` : ""}`
-            : "",
-        },
-        { label: "Lender(s)", value: data.lender_name ?? "" },
-        { label: "Collateral", value: data.security_collateral_description ?? "" },
-        { label: "Governing Law", value: data.governing_law ?? "" },
-        { label: "Admin Agent", value: data.administrative_agent_name ?? "" },
-      ]
+  // Build entries dynamically, filtering out hidden technical keys
+  const entries = data
+    ? Object.entries(data).filter(([key]) => !HIDDEN_KEYS.has(key))
     : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
       <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 overflow-hidden max-h-[85vh] flex flex-col"
+        className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="px-6 py-4 bg-[#6556d2] flex items-center justify-between flex-shrink-0">
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-white">Important information</h3>
-            <p className="text-[11px] text-white/70 mt-0.5 truncate" title={milestone.file_name}>
-              {milestone.file_name}
-            </p>
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Sparkle icon */}
+            <svg className="h-5 w-5 text-white/90 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
+            </svg>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-white">Document Important Information</h3>
+              <p className="text-[11px] text-white/70 mt-0.5 truncate" title={milestone.file_name}>
+                {milestone.file_name}
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -1075,16 +1110,21 @@ function ImportantInfoModal({
 
         {/* Content */}
         <div className="overflow-auto flex-1 px-6 py-5">
+          {/* Loading skeleton */}
           {isLoading && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <svg className="h-8 w-8 animate-spin text-[#6556d2]" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              <span className="text-sm text-gray-400">Fetching document analysis...</span>
+            <div className="border border-gray-200 rounded-lg bg-gray-50/60 p-5">
+              <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className={i === 6 ? "col-span-2" : ""}>
+                    <div className="h-3 w-24 bg-gray-200 rounded animate-pulse mb-2" />
+                    <div className={`h-4 ${i === 6 ? "w-full" : "w-40"} bg-gray-200 rounded animate-pulse`} />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
+          {/* Error state */}
           {error && !isLoading && (
             <div className="flex flex-col items-center justify-center py-12 gap-2">
               <svg className="h-8 w-8 text-red-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -1095,20 +1135,46 @@ function ImportantInfoModal({
             </div>
           )}
 
+          {/* Dynamic data grid */}
           {data && !isLoading && (
-            <div className="grid grid-cols-2 gap-x-8 gap-y-5">
-              {fields.map((f) => (
-                <div key={f.label} className={f.label === "Collateral" ? "col-span-2" : ""}>
-                  <span className="text-[11px] font-semibold text-[#6556d2] uppercase tracking-wider">
-                    {f.label}
-                  </span>
-                  {f.value ? (
-                    <p className="mt-1 text-sm text-gray-700 leading-relaxed">{f.value}</p>
-                  ) : (
-                    <p className="mt-1 text-sm text-gray-400 italic">Not specified</p>
-                  )}
+            <div className="border border-[#6556d2]/15 rounded-lg bg-gray-50/60 p-5">
+              {entries.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">No information available for this document.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+                  {entries.map(([key, value]) => {
+                    const stringVal = value == null ? "" : String(value);
+                    const isBool = typeof value === "boolean";
+                    const isLong = stringVal.length > LONG_VALUE_THRESHOLD;
+
+                    return (
+                      <div key={key} className={isLong ? "col-span-2" : ""}>
+                        <span className="text-[11px] font-semibold text-[#6556d2] uppercase tracking-wider">
+                          {snakeCaseToLabel(key)}
+                        </span>
+
+                        {isBool ? (
+                          <div className="mt-1">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                value
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-red-100 text-red-600"
+                              }`}
+                            >
+                              {value ? "Yes" : "No"}
+                            </span>
+                          </div>
+                        ) : stringVal ? (
+                          <p className="mt-1 text-sm text-gray-700 leading-relaxed">{stringVal}</p>
+                        ) : (
+                          <p className="mt-1 text-sm text-gray-400">&mdash;</p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>

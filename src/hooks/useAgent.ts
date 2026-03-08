@@ -280,6 +280,7 @@ export interface Trigger {
   next_run_at: string;
   recipient_email: string;
   scheduled_end: string;
+  prompt: string;
 }
 
 /**
@@ -317,6 +318,7 @@ async function fetchTriggers(): Promise<Trigger[] | null> {
         next_run_at: (t.next_run_at as string) || "",
         recipient_email: (t.recipient_email as string) || "",
         scheduled_end: (t.scheduled_end as string) || "",
+        prompt: (t.prompt as string) || "",
       })
     );
     // Sort by created_at descending (most recent first)
@@ -335,7 +337,7 @@ async function fetchTriggers(): Promise<Trigger[] | null> {
  */
 async function patchTrigger(
   id: string,
-  fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status">>
+  fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt">>
 ): Promise<boolean> {
   try {
     const res = await fetch(TRIGGERS_URL, {
@@ -735,7 +737,7 @@ export function useAgent() {
   const updateTrigger = useCallback(
     async (
       id: string,
-      fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status">>
+      fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt">>
     ): Promise<boolean> => {
       const ok = await patchTrigger(id, fields);
       if (ok) {

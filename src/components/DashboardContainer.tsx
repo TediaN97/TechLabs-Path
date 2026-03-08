@@ -66,13 +66,24 @@ function formatTriggerDate(iso: string): string {
   return `${dd}.${mm}.${yyyy} ${hh}:${min}`;
 }
 
-function triggerStatusColor(status: string, lastExec: string): { dot: string; text: string } {
+function triggerStatusStyle(status: string, lastExec: string): {
+  dot: string;
+  text: string;
+  bg: string;
+  pulse: boolean;
+} {
   const s = (lastExec || status || "").toLowerCase();
+  if (s === "active")
+    return { dot: "bg-[#6556d2]", text: "text-[#6556d2]", bg: "bg-[#6556d2]/10", pulse: true };
   if (s === "success" || s === "completed")
-    return { dot: "bg-emerald-500", text: "text-emerald-600" };
+    return { dot: "bg-blue-500", text: "text-blue-600", bg: "bg-blue-50", pulse: false };
+  if (s === "cancelled" || s === "disabled")
+    return { dot: "bg-gray-400", text: "text-gray-500", bg: "bg-gray-100", pulse: false };
+  if (s === "paused")
+    return { dot: "bg-amber-400", text: "text-amber-600", bg: "bg-amber-50", pulse: false };
   if (s === "error" || s === "failed")
-    return { dot: "bg-red-500", text: "text-red-600" };
-  return { dot: "bg-gray-400", text: "text-gray-500" };
+    return { dot: "bg-red-500", text: "text-red-600", bg: "bg-red-50", pulse: false };
+  return { dot: "bg-gray-400", text: "text-gray-500", bg: "bg-gray-100", pulse: false };
 }
 
 function triggerStatusLabel(status: string, lastExec: string): string {
@@ -118,30 +129,31 @@ function EditTriggerModal({
 }: {
   trigger: Trigger;
   onClose: () => void;
-  onSave: (fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status">>) => Promise<boolean>;
+  onSave: (fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt">>) => Promise<boolean>;
 }) {
   const [label, setLabel] = useState(trigger.label);
   const [frequency, setFrequency] = useState(trigger.frequency || "daily");
   const [status, setStatus] = useState(trigger.status);
   const [email, setEmail] = useState(trigger.recipient_email);
   const [scheduledEnd, setScheduledEnd] = useState(trigger.scheduled_end ? trigger.scheduled_end.slice(0, 10) : "");
+  const [prompt, setPrompt] = useState(trigger.prompt || "");
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
     setSaving(true);
-    await onSave({ label, frequency, status, recipient_email: email, scheduled_end: scheduledEnd || undefined });
+    await onSave({ label, frequency, status, recipient_email: email, scheduled_end: scheduledEnd || undefined, prompt });
     setSaving(false);
     onClose();
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4 overflow-hidden max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
           <h3 className="text-sm font-semibold text-gray-800">Edit Trigger</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 cursor-pointer text-lg leading-none">&times;</button>
         </div>
-        <div className="px-5 py-4 space-y-3">
+        <div className="px-5 py-4 space-y-3 overflow-auto flex-1">
           <div>
             <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Label</label>
             <input value={label} onChange={(e) => setLabel(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2]" />
@@ -173,10 +185,26 @@ function EditTriggerModal({
             <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Scheduled End</label>
             <input type="date" value={scheduledEnd} onChange={(e) => setScheduledEnd(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2]" />
           </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Prompt</label>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={3}
+              placeholder="AI instruction that drives this trigger…"
+              className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2] resize-y"
+            />
+          </div>
         </div>
-        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-end gap-2">
+        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-end gap-2 flex-shrink-0">
           <button onClick={onClose} className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer">Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="px-3 py-1.5 text-xs font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] cursor-pointer disabled:opacity-50">
+          <button onClick={handleSave} disabled={saving} className="px-3 py-1.5 text-xs font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] cursor-pointer disabled:opacity-50 flex items-center gap-1.5">
+            {saving && (
+              <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            )}
             {saving ? "Saving…" : "Save Changes"}
           </button>
         </div>
@@ -240,7 +268,7 @@ function TriggersPanel({
 }: {
   triggers: Trigger[];
   isLoading: boolean;
-  onUpdate: (id: string, fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status">>) => Promise<boolean>;
+  onUpdate: (id: string, fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt">>) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
 }) {
   const [editTrigger, setEditTrigger] = useState<Trigger | null>(null);
@@ -269,7 +297,7 @@ function TriggersPanel({
         ) : (
           <ul className="divide-y divide-gray-50 max-h-[420px] overflow-y-auto">
             {triggers.map((t) => {
-              const color = triggerStatusColor(t.status, t.last_execution_status);
+              const style = triggerStatusStyle(t.status, t.last_execution_status);
               return (
                 <li key={t.id} className="px-4 py-3 group hover:bg-gray-50/60 transition-colors">
                   {/* Row 1: Label + action buttons */}
@@ -292,16 +320,16 @@ function TriggersPanel({
                       </button>
                     </div>
                   </div>
-                  {/* Row 2: Frequency + status */}
-                  <div className="flex items-center gap-2 mt-1">
+                  {/* Row 2: Frequency badge + Status badge */}
+                  <div className="flex items-center gap-2 mt-1.5">
                     {t.frequency && (
                       <span className="px-1.5 py-0.5 text-[10px] font-medium text-[#6556d2] bg-[#6556d2]/10 rounded">
                         {t.frequency.charAt(0).toUpperCase() + t.frequency.slice(1)}
                       </span>
                     )}
-                    <span className="flex items-center gap-1">
-                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${color.dot}`} />
-                      <span className={`text-[10px] font-medium ${color.text}`}>
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${style.bg}`}>
+                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${style.dot} ${style.pulse ? "animate-pulse" : ""}`} />
+                      <span className={`text-[10px] font-medium ${style.text}`}>
                         {triggerStatusLabel(t.status, t.last_execution_status)}
                       </span>
                     </span>
