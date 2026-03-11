@@ -767,19 +767,56 @@ function StructureDetailModal({
 
 // ── Vectorized Deadlines Table Modal ──────────────────────────────────────────
 
+function urgencyBadgeClass(urgency?: string): string {
+  switch (urgency) {
+    case "high": return "bg-red-100 text-red-700 border-red-200";
+    case "medium": return "bg-amber-100 text-amber-700 border-amber-200";
+    case "low": return "bg-green-100 text-green-700 border-green-200";
+    default: return "bg-gray-100 text-gray-600 border-gray-200";
+  }
+}
+
+function statusBadgeClass(status?: string): string {
+  const s = (status || "").toLowerCase();
+  if (s === "overdue") return "bg-red-100 text-red-700";
+  if (s === "completed" || s === "done") return "bg-green-100 text-green-700";
+  if (s === "upcoming" || s === "active") return "bg-[#6556d2]/10 text-[#6556d2]";
+  return "bg-gray-100 text-gray-600";
+}
+
 function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClose: () => void }) {
   const deadlines: DeadlineEntry[] = milestone.deadlines ?? [];
+  const ds = milestone.deadline_summary;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
       <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-3xl mx-4 overflow-hidden max-h-[85vh] flex flex-col"
+        className="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 overflow-hidden max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="px-6 py-4 bg-[#6556d2] flex items-center justify-between flex-shrink-0">
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-white">Vectorized Deadlines</h3>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-semibold text-white">Vectorized Deadlines</h3>
+              {ds && ds.total > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-white/20 text-white">
+                    {ds.total} total
+                  </span>
+                  {ds.overdue > 0 && (
+                    <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-red-400/30 text-white">
+                      {ds.overdue} overdue
+                    </span>
+                  )}
+                  {ds.needs_resolution > 0 && (
+                    <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-amber-400/30 text-white">
+                      {ds.needs_resolution} needs review
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
             <p className="text-[11px] text-white/70 mt-0.5 truncate" title={milestone.file_name}>
               {milestone.file_name}
             </p>
@@ -809,30 +846,95 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
                     Deadline
                   </th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
-                    Section Name
+                    Type
                   </th>
-                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
-                    Section Page
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
+                    Status
+                  </th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
+                    Section
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {deadlines.map((dl, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="px-4 py-3 text-gray-700 text-xs leading-relaxed">
-                      {dl.description || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
-                      {dl.date_raw || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">
-                      {dl.section_title || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs text-center">
-                      {dl.section_index != null ? String(dl.section_index) : "—"}
-                    </td>
-                  </tr>
-                ))}
+                {deadlines.map((dl, idx) => {
+                  const isExplicit = dl.deadline_type === "explicit_date";
+                  const isSemantic = dl.deadline_type === "semantic_deadline";
+                  const rowOverdue = (dl.status_category || "").toLowerCase() === "overdue" || (dl.days_remaining != null && dl.days_remaining < 0);
+
+                  return (
+                    <tr key={idx} className={`hover:bg-gray-50/60 transition-colors ${rowOverdue ? "bg-red-50/50" : ""}`}>
+                      <td className="px-4 py-3 text-gray-700 text-xs leading-relaxed max-w-[280px]">
+                        <div className="flex items-start gap-2">
+                          {dl.urgency && (
+                            <span className={`mt-0.5 flex-shrink-0 inline-block h-2 w-2 rounded-full ${
+                              dl.urgency === "high" ? "bg-red-500" : dl.urgency === "medium" ? "bg-amber-500" : "bg-green-500"
+                            }`} title={`${dl.urgency} urgency`} />
+                          )}
+                          <span>{dl.description || "—"}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs whitespace-nowrap">
+                        {isExplicit && dl.date_parsed ? (
+                          <div>
+                            <span className="text-gray-700 font-medium">{dl.date_parsed}</span>
+                            {dl.days_remaining != null && (
+                              <span className={`ml-1.5 text-[10px] font-medium ${
+                                dl.days_remaining < 0 ? "text-red-600" : dl.days_remaining <= 30 ? "text-amber-600" : "text-green-600"
+                              }`}>
+                                ({dl.days_remaining < 0 ? `${Math.abs(dl.days_remaining)}d overdue` : `${dl.days_remaining}d left`})
+                              </span>
+                            )}
+                          </div>
+                        ) : isSemantic && dl.resolution_hint ? (
+                          <div>
+                            <span className="text-gray-600 italic">{dl.resolution_hint.human_rule || dl.date_raw || "—"}</span>
+                            {dl.resolution_hint.frequency && (
+                              <span className="ml-1.5 text-[10px] text-gray-400">({dl.resolution_hint.frequency})</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-gray-600">{dl.date_raw || "—"}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs">
+                        {dl.deadline_type ? (
+                          <span className={`inline-flex px-2 py-0.5 text-[10px] font-medium rounded-full border ${
+                            isExplicit ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-purple-50 text-purple-700 border-purple-200"
+                          }`}>
+                            {isExplicit ? "Explicit" : "Semantic"}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs">
+                        {dl.status_category ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className={`inline-flex px-2 py-0.5 text-[10px] font-semibold rounded-full ${statusBadgeClass(dl.status_category)}`}>
+                              {dl.status_category}
+                            </span>
+                            {dl.urgency && (
+                              <span className={`inline-flex px-1.5 py-0.5 text-[9px] font-semibold rounded-full border ${urgencyBadgeClass(dl.urgency)}`}>
+                                {dl.urgency}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-xs">
+                        <div>
+                          {dl.section_title || "—"}
+                          {dl.section_index != null && (
+                            <span className="ml-1 text-gray-400">p.{dl.section_index}</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1333,7 +1435,6 @@ export default function StructuralDataLookup({
           m.file_name.toLowerCase().includes(q) ||
           (m.lender && m.lender.toLowerCase().includes(q)) ||
           (m.borrower && m.borrower.toLowerCase().includes(q)) ||
-          (m.status && m.status.toLowerCase().includes(q)) ||
           formatUploadDate(m.upload_time).includes(q)
       );
     }
@@ -1456,7 +1557,7 @@ export default function StructuralDataLookup({
                     </th>
                   );
                 })}
-                <th className="w-[20%] px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th className="w-[16%] px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>

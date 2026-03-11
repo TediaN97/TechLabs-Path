@@ -44,11 +44,10 @@ function SendIcon() {
 // ── Thinking status messages ─────────────────────────────────────────────────
 
 const THINKING_STEPS = [
-  { message: "Analyzing your request...", delay: 0 },
-  { message: "Scanning document context...", delay: 4000 },
-  { message: "Extracting relevant data points...", delay: 8000 },
-  { message: "Synthesizing final answer...", delay: 12000 },
-  { message: "Almost there, double-checking details...", delay: 16000 },
+  { message: "Analyzing your document structure...", delay: 0 },
+  { message: "Scanning for complex legal clauses and entities...", delay: 10000 },
+  { message: "Extracting financial data and cross-referencing...", delay: 20000 },
+  { message: "Synthesizing final report. Almost finished...", delay: 30000 },
 ];
 
 /** Threshold: show thinking messages immediately if prompt is long */
@@ -59,6 +58,7 @@ const THINKING_DELAY_MS = 3000;
 function ThinkingIndicator({ showImmediately }: { showImmediately: boolean }) {
   const [stepIdx, setStepIdx] = useState(0);
   const [visible, setVisible] = useState(showImmediately);
+  const [fading, setFading] = useState(false);
   const startRef = useRef(Date.now());
 
   useEffect(() => {
@@ -81,13 +81,28 @@ function ThinkingIndicator({ showImmediately }: { showImmediately: boolean }) {
       // Advance step based on elapsed time
       for (let i = THINKING_STEPS.length - 1; i >= 0; i--) {
         if (elapsed >= THINKING_STEPS[i].delay) {
-          setStepIdx(i);
+          if (i !== stepIdx) {
+            setFading(true);
+            setTimeout(() => {
+              setStepIdx(i);
+              setFading(false);
+            }, 300);
+          }
           break;
         }
       }
-    }, 500);
-    return () => clearInterval(id);
-  }, [showImmediately, visible]);
+    }, 10000);
+
+    // Also check once early for the visibility trigger (short prompts)
+    const earlyId = !showImmediately ? setTimeout(() => {
+      setVisible(true);
+    }, THINKING_DELAY_MS) : undefined;
+
+    return () => {
+      clearInterval(id);
+      if (earlyId) clearTimeout(earlyId);
+    };
+  }, [showImmediately, visible, stepIdx]);
 
   return (
     <div className="flex items-start gap-2 mb-3">
@@ -96,7 +111,7 @@ function ThinkingIndicator({ showImmediately }: { showImmediately: boolean }) {
       </div>
       <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-white border border-gray-100 shadow-sm">
         {visible ? (
-          <div className="flex items-center gap-2">
+          <div className={`flex items-center gap-2 transition-opacity duration-300 ${fading ? "opacity-0" : "opacity-100"}`}>
             <svg className="h-3.5 w-3.5 animate-spin text-[#6556d2] flex-shrink-0" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -129,14 +144,16 @@ function FileDocIcon() {
 }
 
 const UPLOAD_STEPS = [
-  (name: string) => `Uploading ${name}...`,
-  () => "Still sending data, please stay with us...",
-  () => "Almost there, finalizing the transfer...",
+  () => `Analyzing your document structure...`,
+  () => "Scanning for complex legal clauses and entities...",
+  () => "Extracting financial data and cross-referencing...",
+  () => "Synthesizing final report. Almost finished...",
 ];
-const UPLOAD_THRESHOLDS = [10000, 25000]; // ms
+const UPLOAD_THRESHOLDS = [10000, 20000, 30000]; // ms
 
 function UploadProgressBubble({ fileName }: { fileName: string }) {
   const [step, setStep] = useState(0);
+  const [fading, setFading] = useState(false);
   const startRef = useRef(Date.now());
 
   useEffect(() => {
@@ -144,9 +161,19 @@ function UploadProgressBubble({ fileName }: { fileName: string }) {
     setStep(0);
     const id = setInterval(() => {
       const elapsed = Date.now() - startRef.current;
-      if (elapsed >= UPLOAD_THRESHOLDS[1]) setStep(2);
-      else if (elapsed >= UPLOAD_THRESHOLDS[0]) setStep(1);
-    }, 500);
+      let newStep = 0;
+      if (elapsed >= UPLOAD_THRESHOLDS[2]) newStep = 3;
+      else if (elapsed >= UPLOAD_THRESHOLDS[1]) newStep = 2;
+      else if (elapsed >= UPLOAD_THRESHOLDS[0]) newStep = 1;
+
+      setStep((prev) => {
+        if (newStep !== prev) {
+          setFading(true);
+          setTimeout(() => setFading(false), 300);
+        }
+        return newStep;
+      });
+    }, 10000);
     return () => clearInterval(id);
   }, []);
 
@@ -160,12 +187,12 @@ function UploadProgressBubble({ fileName }: { fileName: string }) {
           <FileDocIcon />
           <span className="font-medium truncate">{fileName}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className={`flex items-center gap-2 transition-opacity duration-300 ${fading ? "opacity-0" : "opacity-100"}`}>
           <svg className="h-3.5 w-3.5 animate-spin text-[#6556d2] flex-shrink-0" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <span className="text-xs text-[#6556d2]">{UPLOAD_STEPS[step](fileName)}</span>
+          <span className="text-xs text-[#6556d2]">{UPLOAD_STEPS[step]()}</span>
         </div>
       </div>
     </div>

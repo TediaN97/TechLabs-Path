@@ -10,11 +10,31 @@ export interface ContractingParty {
   role: string;
 }
 
+export interface ResolutionHint {
+  frequency?: string;
+  human_rule?: string;
+  next_occurrence?: string;
+}
+
 export interface DeadlineEntry {
   description: string;
   date_raw: string;
+  date_parsed?: string;
   section_title: string;
   section_index: string | number;
+  deadline_type?: "explicit_date" | "semantic_deadline";
+  days_remaining?: number | null;
+  status_category?: string;
+  urgency?: "high" | "medium" | "low";
+  resolution_hint?: ResolutionHint;
+}
+
+export interface DeadlineSummary {
+  total: number;
+  overdue: number;
+  needs_resolution: number;
+  upcoming: number;
+  completed: number;
 }
 
 export interface Milestone {
@@ -28,6 +48,7 @@ export interface Milestone {
   document_id?: string;
   contracting_parties?: ContractingParty[];
   deadlines?: DeadlineEntry[];
+  deadline_summary?: DeadlineSummary;
   file_name: string;
   upload_time: string;
   description: string;
@@ -51,6 +72,19 @@ export interface ExportFile {
 
 // ── API response types ─────────────────────────────────────────────────────────
 
+interface ApiDeadlineEntry {
+  description: string;
+  date_raw: string;
+  date_parsed?: string;
+  section_title: string;
+  section_index: string | number;
+  deadline_type?: "explicit_date" | "semantic_deadline";
+  days_remaining?: number | null;
+  status_category?: string;
+  urgency?: "high" | "medium" | "low";
+  resolution_hint?: { frequency?: string; human_rule?: string; next_occurrence?: string };
+}
+
 interface ApiDocument {
   document_id: string;
   file_name: string;
@@ -58,7 +92,14 @@ interface ApiDocument {
   upload_time: string;
   status: string;
   contracting_parties?: { name: string; role: string }[];
-  deadlines?: { description: string; date_raw: string; section_title: string; section_index: string | number }[];
+  deadlines?: ApiDeadlineEntry[];
+  deadline_summary?: {
+    total: number;
+    overdue: number;
+    needs_resolution: number;
+    upcoming?: number;
+    completed?: number;
+  };
 }
 
 interface GetAllDocumentsResponse {
@@ -82,6 +123,28 @@ function extractPartyName(
   return match?.name || "-";
 }
 
+function computeDeadlineSummary(deadlines: ApiDeadlineEntry[]): DeadlineSummary {
+  let overdue = 0;
+  let needsResolution = 0;
+  let upcoming = 0;
+  let completed = 0;
+
+  for (const dl of deadlines) {
+    const cat = (dl.status_category || "").toLowerCase();
+    if (cat === "overdue" || (dl.days_remaining != null && dl.days_remaining < 0)) {
+      overdue++;
+    } else if (dl.deadline_type === "semantic_deadline") {
+      needsResolution++;
+    } else if (cat === "completed" || cat === "done") {
+      completed++;
+    } else {
+      upcoming++;
+    }
+  }
+
+  return { total: deadlines.length, overdue, needs_resolution: needsResolution, upcoming, completed };
+}
+
 function mapDocumentToMilestone(doc: ApiDocument): Milestone {
   const uploadDate = new Date(doc.upload_time);
   const deadlineDate = isNaN(uploadDate.getTime())
@@ -89,6 +152,32 @@ function mapDocumentToMilestone(doc: ApiDocument): Milestone {
     : uploadDate.toISOString().slice(0, 10);
 
   const parties = doc.contracting_parties ?? [];
+  const rawDeadlines = doc.deadlines ?? [];
+
+  // Map API deadlines to DeadlineEntry with all new fields
+  const deadlines: DeadlineEntry[] = rawDeadlines.map((dl) => ({
+    description: dl.description,
+    date_raw: dl.date_raw,
+    date_parsed: dl.date_parsed,
+    section_title: dl.section_title,
+    section_index: dl.section_index,
+    deadline_type: dl.deadline_type,
+    days_remaining: dl.days_remaining,
+    status_category: dl.status_category,
+    urgency: dl.urgency,
+    resolution_hint: dl.resolution_hint,
+  }));
+
+  // Use API-provided summary or compute from deadlines
+  const deadline_summary: DeadlineSummary = doc.deadline_summary
+    ? {
+        total: doc.deadline_summary.total,
+        overdue: doc.deadline_summary.overdue,
+        needs_resolution: doc.deadline_summary.needs_resolution,
+        upcoming: doc.deadline_summary.upcoming ?? 0,
+        completed: doc.deadline_summary.completed ?? 0,
+      }
+    : computeDeadlineSummary(rawDeadlines);
 
   return {
     id: doc.document_id,
@@ -100,7 +189,8 @@ function mapDocumentToMilestone(doc: ApiDocument): Milestone {
     raw_status: doc.status || "unknown",
     document_id: doc.document_id,
     contracting_parties: parties,
-    deadlines: doc.deadlines ?? [],
+    deadlines,
+    deadline_summary,
     file_name: doc.file_name || "—",
     upload_time: doc.upload_time || "",
     description: doc.description || "No description",
