@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useAgent } from "../hooks/useAgent";
-import type { Trigger, ExportFile } from "../hooks/useAgent";
+import type { Trigger, ExportFile, Milestone } from "../hooks/useAgent";
 import ChatInterface from "./ChatInterface";
 import StructuralDataLookup from "./StructuralDataLookup";
+import DeadlineCalendar from "./DeadlineCalendar";
+import type { CalendarActionType } from "./DeadlineCalendar";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 
@@ -435,6 +437,23 @@ export default function DashboardContainer() {
   const agent = useAgent();
   const isLoading = agent.isProcessing || agent.isExporting || agent.isUploading;
 
+  // ── Calendar → StructuralDataLookup modal bridge ──────────────────────────
+  const [calendarAction, setCalendarAction] = useState<{
+    type: CalendarActionType;
+    milestone: Milestone;
+  } | null>(null);
+
+  const handleCalendarAction = useCallback(
+    (type: CalendarActionType, milestone: Milestone) => {
+      setCalendarAction({ type, milestone });
+    },
+    []
+  );
+
+  const handleCalendarActionHandled = useCallback(() => {
+    setCalendarAction(null);
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -450,6 +469,10 @@ export default function DashboardContainer() {
                 Processing…
               </span>
             )}
+            <DeadlineCalendar
+              data={agent.data}
+              onAction={handleCalendarAction}
+            />
             <div className="h-8 w-8 rounded-full bg-[#6556d2] flex items-center justify-center text-white text-xs font-bold">
               TL
             </div>
@@ -481,6 +504,8 @@ export default function DashboardContainer() {
               onDelete={agent.deleteMilestone}
               isUploading={agent.isUploading}
               uploadingFileName={agent.uploadingFileName}
+              calendarAction={calendarAction}
+              onCalendarActionHandled={handleCalendarActionHandled}
             />
           </div>
 

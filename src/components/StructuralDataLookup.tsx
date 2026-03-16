@@ -1,6 +1,7 @@
 import { Fragment, useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import type { Milestone, DeadlineEntry } from "../hooks/useAgent";
+import type { Milestone, DeadlineEntry, DeleteFileResult } from "../hooks/useAgent";
+import type { CalendarActionType } from "./DeadlineCalendar";
 
 type SortKey = "file_name" | "upload_time" | "lender" | "borrower";
 type SortDirection = "asc" | "desc";
@@ -1295,6 +1296,110 @@ function ImportantInfoModal({
   );
 }
 
+// ── Delete Confirmation Modal ────────────────────────────────────────────────
+
+function DeleteConfirmModal({
+  fileName,
+  isDeleting,
+  onConfirm,
+  onCancel,
+}: {
+  fileName: string;
+  isDeleting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !isDeleting) onCancel();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onCancel, isDeleting]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={isDeleting ? undefined : onCancel}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex-shrink-0 h-9 w-9 rounded-full bg-red-50 flex items-center justify-center">
+              <svg className="h-5 w-5 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800">Delete file</h3>
+              <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[250px]" title={fileName}>{fileName}</p>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Are you sure you want to delete this file and all its analyzed data? This action cannot be undone.
+          </p>
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="px-3 py-1.5 text-xs font-medium text-white bg-red-500 rounded-md hover:bg-red-600 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {isDeleting && (
+              <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            )}
+            {isDeleting ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Toast notification ──────────────────────────────────────────────────────
+
+function Toast({ message, type, onDismiss }: { message: string; type: "success" | "error"; onDismiss: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onDismiss, 5000);
+    return () => clearTimeout(timer);
+  }, [onDismiss]);
+
+  return createPortal(
+    <div className="fixed top-4 right-4 z-[9999] animate-[fadeIn_200ms_ease-out]">
+      <div
+        className={`flex items-start gap-2 px-4 py-3 rounded-lg shadow-lg border max-w-sm ${
+          type === "success"
+            ? "bg-white border-emerald-200 text-gray-700"
+            : "bg-white border-red-200 text-gray-700"
+        }`}
+      >
+        {type === "success" ? (
+          <svg className="h-5 w-5 text-emerald-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        ) : (
+          <svg className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        )}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm leading-relaxed">{message}</p>
+        </div>
+        <button onClick={onDismiss} className="text-gray-400 hover:text-gray-600 text-sm leading-none cursor-pointer flex-shrink-0">&times;</button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 const RECORDS_PER_PAGE = 10;
@@ -1307,9 +1412,13 @@ interface StructuralDataLookupProps {
   fetchError: string | null;
   detailMilestone: Milestone | null;
   onDetailStruct: (m: Milestone | null) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<DeleteFileResult>;
   isUploading?: boolean;
   uploadingFileName?: string;
+  /** External modal trigger from the Deadline Calendar */
+  calendarAction?: { type: CalendarActionType; milestone: Milestone } | null;
+  /** Callback to acknowledge that the external action has been handled */
+  onCalendarActionHandled?: () => void;
 }
 
 export default function StructuralDataLookup({
@@ -1321,12 +1430,41 @@ export default function StructuralDataLookup({
   onDelete,
   isUploading = false,
   uploadingFileName = "",
+  calendarAction = null,
+  onCalendarActionHandled,
 }: StructuralDataLookupProps) {
   const [filterText, setFilterText] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [vectorMilestone, setVectorMilestone] = useState<Milestone | null>(null);
   const [aiMilestone, setAiMilestone] = useState<Milestone | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "upload_time", direction: "desc" });
+
+  // Delete flow state
+  const [deleteTarget, setDeleteTarget] = useState<Milestone | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTarget) return;
+    const docId = deleteTarget.document_id || deleteTarget.id;
+    setIsDeleting(true);
+    setDeletingId(docId);
+    try {
+      const result = await onDelete(docId);
+      if (result.success) {
+        setToast({ message: result.message, type: "success" });
+      } else {
+        setToast({ message: `Failed to delete the file. ${result.message}`, type: "error" });
+      }
+    } catch {
+      setToast({ message: "Failed to delete the file. Please try again.", type: "error" });
+    } finally {
+      setIsDeleting(false);
+      setDeletingId(null);
+      setDeleteTarget(null);
+    }
+  }, [deleteTarget, onDelete]);
 
   // Structure Detail modal state
   const [structDetailMilestone, setStructDetailMilestone] = useState<Milestone | null>(null);
@@ -1415,6 +1553,27 @@ export default function StructuralDataLookup({
       setImportantInfoLoading(false);
     }
   }, []);
+
+  // ── External calendar action bridge ───────────────────────────────────────
+  useEffect(() => {
+    if (!calendarAction) return;
+    const { type, milestone } = calendarAction;
+    switch (type) {
+      case "detail":
+        handleDetail(milestone);
+        break;
+      case "importantInfo":
+        handleImportantInfo(milestone);
+        break;
+      case "aiDeadlines":
+        handleAiAnalyzed(milestone);
+        break;
+      case "vectorDeadlines":
+        setVectorMilestone(milestone);
+        break;
+    }
+    onCalendarActionHandled?.();
+  }, [calendarAction, handleDetail, handleImportantInfo, handleAiAnalyzed, onCalendarActionHandled]);
 
   const handleSort = useCallback((key: SortKey) => {
     setSortConfig((prev) =>
@@ -1650,11 +1809,19 @@ export default function StructuralDataLookup({
                           </button>
                           {/* 4. Delete Icon */}
                           <button
-                            onClick={() => onDelete(entry.document_id || entry.id)}
+                            onClick={() => setDeleteTarget(entry)}
+                            disabled={deletingId === (entry.document_id || entry.id)}
                             title="Delete"
-                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <Trash2Icon />
+                            {deletingId === (entry.document_id || entry.id) ? (
+                              <svg className="h-4 w-4 animate-spin text-[#6556d2]" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                              </svg>
+                            ) : (
+                              <Trash2Icon />
+                            )}
                           </button>
                         </div>
                       </td>
@@ -1738,6 +1905,17 @@ export default function StructuralDataLookup({
           error={importantInfoError}
           onClose={() => setImportantInfoMilestone(null)}
         />
+      )}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          fileName={deleteTarget.file_name}
+          isDeleting={isDeleting}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => { if (!isDeleting) setDeleteTarget(null); }}
+        />
+      )}
+      {toast && (
+        <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />
       )}
     </>
   );
