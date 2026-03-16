@@ -123,6 +123,10 @@ const DATA_REFRESH_URL =
 const FILE_UPLOAD_URL =
   "https://20.110.72.120.nip.io/webhook/uploadFile";
 
+/** Production API endpoint for deleting files */
+const DELETE_FILE_URL =
+  "https://20.110.72.120.nip.io/webhook/deleteFile";
+
 /** Production API endpoint for fetching triggers */
 const TRIGGERS_URL =
   "https://20.110.72.120.nip.io/webhook/triggers";
@@ -358,6 +362,34 @@ async function patchTrigger(
 /**
  * DELETE a trigger.
  */
+/**
+ * DELETE a file/document and all its analyzed data.
+ */
+export interface DeleteFileResult {
+  success: boolean;
+  message: string;
+}
+
+async function deleteFileApi(docId: string): Promise<DeleteFileResult> {
+  try {
+    const res = await fetch(DELETE_FILE_URL, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ doc_id: docId }),
+    });
+    if (!res.ok) return { success: false, message: `HTTP ${res.status}` };
+    const text = await res.text();
+    if (!text) return { success: true, message: "File deleted successfully." };
+    const json = JSON.parse(text);
+    return {
+      success: json.success !== false,
+      message: json.message || "File deleted successfully.",
+    };
+  } catch (err) {
+    return { success: false, message: err instanceof Error ? err.message : "Unknown error" };
+  }
+}
+
 async function deleteTriggerApi(id: string): Promise<boolean> {
   try {
     const res = await fetch(TRIGGERS_URL, {
@@ -725,11 +757,18 @@ export function useAgent() {
   // ── deleteMilestone ──────────────────────────────────────────────────────
 
   const deleteMilestone = useCallback(
-    (id: string) => {
-      setData((prev) => prev.filter((m) => m.id !== id));
-      logExecution("Record deleted");
+    async (docId: string): Promise<DeleteFileResult> => {
+      const result = await deleteFileApi(docId);
+      if (result.success) {
+        // Remove from local state immediately
+        setData((prev) => prev.filter((m) => (m.document_id || m.id) !== docId));
+        logExecution(`File deleted: ${docId}`);
+        // Also re-fetch server truth
+        await refreshData();
+      }
+      return result;
     },
-    [logExecution]
+    [logExecution, refreshData]
   );
 
   // ── Trigger actions ─────────────────────────────────────────────────────
