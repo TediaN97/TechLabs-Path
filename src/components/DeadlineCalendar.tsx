@@ -94,8 +94,8 @@ function getUrgency(date: Date): "high" | "medium" | "low" {
   today.setHours(0, 0, 0, 0);
   const diff = (date.getTime() - today.getTime()) / 86400000;
   if (diff < 0) return "high"; // overdue
-  if (diff <= 7) return "high"; // due within 7 days
-  if (diff <= 30) return "medium";
+  if (diff <= 2) return "high"; // due within 7 days
+  if (diff <= 10) return "medium";
   return "low";
 }
 
@@ -482,12 +482,12 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                   >
                     Today
                   </button>
-                  {overdueCount > 0 && (
+                  {/* {overdueCount > 0 && (
                     <span className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded-md">
                       <WarningIcon />
                       {overdueCount} overdue
                     </span>
-                  )}
+                  )} */}
                 </div>
               </div>
 
@@ -593,15 +593,15 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                     <div className="flex items-center gap-4 mt-3 px-1">
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
-                        <span className="text-[10px] text-gray-500">High / Overdue</span>
+                        <span className="text-[10px] text-gray-500">2-day reminder</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
-                        <span className="text-[10px] text-gray-500">Medium (≤30 days)</span>
+                        <span className="text-[10px] text-gray-500">10-day reminder</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block h-2 w-2 rounded-full bg-[#6556d2]" />
-                        <span className="text-[10px] text-gray-500">Low (&gt;30 days)</span>
+                        <span className="text-[10px] text-gray-500">1-month reminder</span>
                       </div>
                     </div>
                   </>
