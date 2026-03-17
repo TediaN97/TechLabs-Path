@@ -766,24 +766,65 @@ function StructureDetailModal({
   );
 }
 
-// ── Vectorized Deadlines Table Modal ──────────────────────────────────────────
+// ── Vectorized Deadlines – urgency helpers (self-contained) ──────────────────
 
-function urgencyBadgeClass(urgency?: string): string {
-  switch (urgency) {
-    case "high": return "bg-red-100 text-red-700 border-red-200";
-    case "medium": return "bg-amber-100 text-amber-700 border-amber-200";
-    case "low": return "bg-green-100 text-green-700 border-green-200";
-    default: return "bg-gray-100 text-gray-600 border-gray-200";
+type VDUrgency = "critical" | "standard" | "future" | "past";
+
+function vdGetUrgency(dateRaw: string): VDUrgency {
+  if (!dateRaw || dateRaw === "—" || dateRaw === "-") return "future";
+  // Attempt to parse the date using common formats
+  let parsed: Date | null = null;
+  if (dateRaw.includes("T")) {
+    const d = new Date(dateRaw);
+    if (!isNaN(d.getTime())) parsed = d;
+  }
+  if (!parsed && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
+    const d = new Date(dateRaw + "T00:00:00");
+    if (!isNaN(d.getTime())) parsed = d;
+  }
+  if (!parsed) {
+    const dotParts = dateRaw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    if (dotParts) {
+      const d = new Date(+dotParts[3], +dotParts[2] - 1, +dotParts[1]);
+      if (!isNaN(d.getTime())) parsed = d;
+    }
+  }
+  if (!parsed) {
+    const d = new Date(dateRaw);
+    if (!isNaN(d.getTime())) parsed = d;
+  }
+  if (!parsed) return "future";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(parsed);
+  target.setHours(0, 0, 0, 0);
+  const daysRemaining = Math.floor((target.getTime() - today.getTime()) / 86400000);
+  if (daysRemaining < 0) return "past";
+  if (daysRemaining < 2) return "critical";
+  if (daysRemaining <= 10) return "standard";
+  return "future";
+}
+
+function vdBadgeClasses(u: VDUrgency): string {
+  switch (u) {
+    case "critical": return "bg-red-100 text-red-700 border-red-200";
+    case "standard": return "bg-amber-100 text-amber-700 border-amber-200";
+    case "future":   return "bg-blue-100 text-blue-700 border-blue-200";
+    case "past":     return "bg-gray-100 text-gray-500 border-gray-200";
   }
 }
 
-function statusBadgeClass(status?: string): string {
-  const s = (status || "").toLowerCase();
-  if (s === "overdue") return "bg-red-100 text-red-700";
-  if (s === "completed" || s === "done") return "bg-green-100 text-green-700";
-  if (s === "upcoming" || s === "active") return "bg-[#6556d2]/10 text-[#6556d2]";
-  return "bg-gray-100 text-gray-600";
+function vdBadgeLabel(u: VDUrgency): string {
+  switch (u) {
+    case "critical": return "Critical";
+    case "standard": return "Standard";
+    case "future":   return "Future";
+    case "past":     return "Past";
+  }
 }
+
+// ── Vectorized Deadlines Table Modal ──────────────────────────────────────────
 
 function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClose: () => void }) {
   const deadlines: DeadlineEntry[] = milestone.deadlines ?? [];
@@ -838,100 +879,67 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
         ) : (
           <div className="overflow-auto flex-1">
             <table className="w-full text-sm">
-              <thead className="top-0 z-10">
+              <thead className="sticky top-0 z-10">
                 <tr className="bg-[#6556d2]/5 border-b border-[#6556d2]/20">
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider">
                     Description
                   </th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
                     Deadline
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
-                    Type
-                  </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
-                    Status
+                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
+                    Urgency
                   </th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
                     Section
+                  </th>
+                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
+                    Page
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {deadlines.map((dl, idx) => {
-                  const isExplicit = dl.deadline_type === "explicit_date";
-                  const isSemantic = dl.deadline_type === "semantic_deadline";
-                  const rowOverdue = (dl.status_category || "").toLowerCase() === "overdue" || (dl.days_remaining != null && dl.days_remaining < 0);
-
+                  const urgency = vdGetUrgency(dl.date_raw);
                   return (
-                    <tr key={idx} className={`hover:bg-gray-50/60 transition-colors ${rowOverdue ? "bg-red-50/50" : ""}`}>
-                      <td className="px-4 py-3 text-gray-700 text-xs leading-relaxed max-w-[280px]">
-                        <div className="flex items-start gap-2">
-                          {dl.urgency && (
-                            <span className={`mt-0.5 flex-shrink-0 inline-block h-2 w-2 rounded-full ${
-                              dl.urgency === "high" ? "bg-red-500" : dl.urgency === "medium" ? "bg-amber-500" : "bg-green-500"
-                            }`} title={`${dl.urgency} urgency`} />
-                          )}
-                          <span>{dl.description || "—"}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-xs whitespace-nowrap">
-                        {isExplicit && dl.date_parsed ? (
-                          <div>
-                            <span className="text-gray-700 font-medium">{dl.date_parsed}</span>
-                            {dl.days_remaining != null && (
-                              <span className={`ml-1.5 text-[10px] font-medium ${
-                                dl.days_remaining < 0 ? "text-red-600" : dl.days_remaining <= 30 ? "text-amber-600" : "text-green-600"
-                              }`}>
-                                ({dl.days_remaining < 0 ? `${Math.abs(dl.days_remaining)}d overdue` : `${dl.days_remaining}d left`})
-                              </span>
-                            )}
-                          </div>
-                        ) : isSemantic && dl.resolution_hint ? (
-                          <div>
-                            <span className="text-gray-600 italic">{dl.resolution_hint.human_rule || dl.date_raw || "—"}</span>
-                            {dl.resolution_hint.frequency && (
-                              <span className="ml-1.5 text-[10px] text-gray-400">({dl.resolution_hint.frequency})</span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-gray-600">{dl.date_raw || "—"}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs">
-                        {dl.deadline_type ? (
-                          <span className={`inline-flex px-2 py-0.5 text-[10px] font-medium rounded-full border ${
-                            isExplicit ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-purple-50 text-purple-700 border-purple-200"
-                          }`}>
-                            {isExplicit ? "Explicit" : "Semantic"}
+                    <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
+                      {/* Description + inline urgency dot — flex row for alignment */}
+                      <td className="px-4 py-3">
+                        <div className="flex flex-row items-center gap-2">
+                          <span
+                            className={`inline-block h-2 w-2 rounded-full flex-shrink-0 ${
+                              urgency === "critical" ? "bg-red-500"
+                              : urgency === "standard" ? "bg-amber-400"
+                              : urgency === "future" ? "bg-blue-500"
+                              : "bg-gray-400"
+                            }`}
+                          />
+                          <span className="text-gray-700 text-xs leading-relaxed">
+                            {dl.description || "—"}
                           </span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs">
-                        {dl.status_category ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className={`inline-flex px-2 py-0.5 text-[10px] font-semibold rounded-full ${statusBadgeClass(dl.status_category)}`}>
-                              {dl.status_category}
-                            </span>
-                            {dl.urgency && (
-                              <span className={`inline-flex px-1.5 py-0.5 text-[9px] font-semibold rounded-full border ${urgencyBadgeClass(dl.urgency)}`}>
-                                {dl.urgency}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">
-                        <div>
-                          {dl.section_title || "—"}
-                          {dl.section_index != null && (
-                            <span className="ml-1 text-gray-400">p.{dl.section_index}</span>
-                          )}
                         </div>
+                      </td>
+                      {/* Deadline date */}
+                      <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                        {dl.date_raw || "—"}
+                      </td>
+                      {/* Urgency badge — centred, perfectly inline */}
+                      <td className="px-4 py-3">
+                        <div className="flex flex-row items-center justify-center">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-full border ${vdBadgeClasses(urgency)}`}
+                          >
+                            {vdBadgeLabel(urgency)}
+                          </span>
+                        </div>
+                      </td>
+                      {/* Section */}
+                      <td className="px-4 py-3 text-gray-600 text-xs">
+                        {dl.section_title || "—"}
+                      </td>
+                      {/* Page */}
+                      <td className="px-4 py-3 text-gray-600 text-xs text-center">
+                        {dl.section_index != null ? String(dl.section_index) : "—"}
                       </td>
                     </tr>
                   );

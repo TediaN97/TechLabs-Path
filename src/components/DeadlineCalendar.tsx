@@ -89,26 +89,59 @@ const DAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 // ── Urgency ─────────────────────────────────────────────────────────────────────
 
-function getUrgency(date: Date): "high" | "medium" | "low" {
+type UrgencyLevel = "critical" | "standard" | "future" | "past";
+
+/** Compute days remaining (floored) from today midnight to the deadline date. */
+function getDaysRemaining(date: Date): number {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const diff = (date.getTime() - today.getTime()) / 86400000;
-  if (diff < 0) return "high"; // overdue
-  if (diff <= 2) return "high"; // due within 7 days
-  if (diff <= 10) return "medium";
-  return "low";
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  return Math.floor((target.getTime() - today.getTime()) / 86400000);
 }
 
-function urgencyDotColor(urgency: "high" | "medium" | "low"): string {
-  if (urgency === "high") return "bg-red-500";
-  if (urgency === "medium") return "bg-amber-400";
-  return "bg-[#6556d2]";
+function getUrgency(date: Date): UrgencyLevel {
+  const daysRemaining = getDaysRemaining(date);
+  if (daysRemaining < 0) return "past";        // overdue / already passed
+  if (daysRemaining < 2) return "critical";     // < 2 days  → Red
+  if (daysRemaining <= 10) return "standard";   // 2–10 days → Yellow
+  return "future";                              // > 10 days → Blue (labelled >30 in legend)
 }
 
-function urgencyTextColor(urgency: "high" | "medium" | "low"): string {
-  if (urgency === "high") return "text-red-600";
-  if (urgency === "medium") return "text-amber-600";
-  return "text-[#6556d2]";
+function urgencyDotColor(urgency: UrgencyLevel): string {
+  switch (urgency) {
+    case "critical": return "bg-red-500";
+    case "standard": return "bg-amber-400";
+    case "future":   return "bg-blue-500";
+    case "past":     return "bg-gray-400";
+  }
+}
+
+function urgencyBgTint(urgency: UrgencyLevel): string {
+  switch (urgency) {
+    case "critical": return "bg-red-50/60";
+    case "standard": return "bg-amber-50/50";
+    case "future":   return "bg-blue-50/40";
+    case "past":     return "bg-gray-50/40";
+  }
+}
+
+function urgencyTextColor(urgency: UrgencyLevel): string {
+  switch (urgency) {
+    case "critical": return "text-red-600";
+    case "standard": return "text-amber-600";
+    case "future":   return "text-blue-600";
+    case "past":     return "text-gray-400";
+  }
+}
+
+function urgencyLabel(urgency: UrgencyLevel): string {
+  switch (urgency) {
+    case "critical": return "Critical Reminder";
+    case "standard": return "Standard Reminder";
+    case "future":   return "Future Reminder";
+    case "past":     return "Past";
+  }
 }
 
 // ── Event Building ──────────────────────────────────────────────────────────────
@@ -140,15 +173,23 @@ function groupByDate(events: CalendarEvent[]): DayEventsGroup {
   return grouped;
 }
 
+/** Priority ordering for urgency levels (lower = more urgent). */
+const URGENCY_PRIORITY: Record<UrgencyLevel, number> = {
+  critical: 0,
+  standard: 1,
+  future: 2,
+  past: 3,
+};
+
 /** Deduplicate events by file within a day – show one entry per file per day */
 function uniqueFilesForDay(events: CalendarEvent[]): {
   milestone: Milestone;
-  maxUrgency: "high" | "medium" | "low";
+  maxUrgency: UrgencyLevel;
   count: number;
 }[] {
   const seen = new Map<
     string,
-    { milestone: Milestone; maxUrgency: "high" | "medium" | "low"; count: number }
+    { milestone: Milestone; maxUrgency: UrgencyLevel; count: number }
   >();
   for (const ev of events) {
     const key = ev.milestone.document_id || ev.milestone.id;
@@ -158,10 +199,7 @@ function uniqueFilesForDay(events: CalendarEvent[]): {
       seen.set(key, { milestone: ev.milestone, maxUrgency: urgency, count: 1 });
     } else {
       existing.count++;
-      if (
-        urgency === "high" ||
-        (urgency === "medium" && existing.maxUrgency === "low")
-      ) {
+      if (URGENCY_PRIORITY[urgency] < URGENCY_PRIORITY[existing.maxUrgency]) {
         existing.maxUrgency = urgency;
       }
     }
@@ -256,6 +294,7 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
     dateKey: string;
     events: CalendarEvent[];
   } | null>(null);
+  const [showUpcomingOnly, setShowUpcomingOnly] = useState(false);
 
   // ── Derived data ────────────────────────────────────────────────────────────
   const allEvents = useMemo(() => buildCalendarEvents(data), [data]);
@@ -301,6 +340,18 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
   const goToToday = useCallback(() => {
     const now = new Date();
     setSelectedMonth({ year: now.getFullYear(), month: now.getMonth() });
+    setShowUpcomingOnly(false);
+  }, []);
+
+  const toggleUpcoming = useCallback(() => {
+    setShowUpcomingOnly((prev) => {
+      if (!prev) {
+        // When activating the filter, also jump to today's month
+        const now = new Date();
+        setSelectedMonth({ year: now.getFullYear(), month: now.getMonth() });
+      }
+      return !prev;
+    });
   }, []);
 
   // ── Action handler (close both modals → fire callback) ────────────────────
@@ -374,14 +425,20 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
     return result;
   }, [year, month, todayKey, eventsByDate]);
 
-  // Check if any day in the month has overdue events
+  /** Does this day have any overdue (past) events? */
   const hasOverdueInDay = useCallback(
-    (events: CalendarEvent[]): boolean => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return events.some((ev) => ev.date < today);
-    },
+    (events: CalendarEvent[]): boolean =>
+      events.some((ev) => getUrgency(ev.date) === "past"),
     []
+  );
+
+  /** Is this calendar cell date strictly before today? Used for the upcoming filter. */
+  const isDayInPast = useCallback(
+    (dateKey: string): boolean => {
+      if (!dateKey) return false;
+      return dateKey < todayKey;
+    },
+    [todayKey]
   );
 
   // ── Event click: file name in a day tile ──────────────────────────────────
@@ -482,12 +539,16 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                   >
                     Today
                   </button>
-                  {/* {overdueCount > 0 && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded-md">
-                      <WarningIcon />
-                      {overdueCount} overdue
-                    </span>
-                  )} */}
+                  <button
+                    onClick={toggleUpcoming}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors cursor-pointer ${
+                      showUpcomingOnly
+                        ? "text-white bg-[#6556d2] border border-[#6556d2]"
+                        : "text-[#6556d2] border border-[#6556d2]/30 hover:bg-[#6556d2]/5"
+                    }`}
+                  >
+                    Upcoming Deadlines
+                  </button>
                 </div>
               </div>
 
@@ -525,16 +586,34 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                           return <div key={idx} className="bg-gray-50/80 min-h-[90px]" />;
                         }
 
+                        const pastDay = isDayInPast(cell.dateKey);
+                        const dimmed = showUpcomingOnly && pastDay;
                         const files = uniqueFilesForDay(cell.events);
                         const isOverdue = hasOverdueInDay(cell.events);
                         const maxVisible = 2;
 
+                        // Determine cell background tint from the highest-urgency event
+                        const topUrgency: UrgencyLevel | null =
+                          files.length > 0
+                            ? files.reduce<UrgencyLevel>((best, f) =>
+                                URGENCY_PRIORITY[f.maxUrgency] < URGENCY_PRIORITY[best]
+                                  ? f.maxUrgency
+                                  : best
+                              , files[0].maxUrgency)
+                            : null;
+
                         return (
                           <div
                             key={idx}
-                            className={`bg-white min-h-[90px] p-1.5 relative transition-colors ${
+                            className={`min-h-[90px] p-1.5 relative transition-colors ${
                               cell.isToday ? "ring-2 ring-[#6556d2] ring-inset" : ""
-                            } ${isOverdue ? "bg-red-50/40" : ""}`}
+                            } ${
+                              dimmed
+                                ? "bg-gray-100/80 opacity-40 pointer-events-none"
+                                : topUrgency
+                                  ? urgencyBgTint(topUrgency)
+                                  : "bg-white"
+                            }`}
                           >
                             {/* Day number */}
                             <div className="flex items-center justify-between mb-1">
@@ -542,66 +621,74 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                                 className={`text-xs font-medium leading-none ${
                                   cell.isToday
                                     ? "h-5 w-5 flex items-center justify-center rounded-full bg-[#6556d2] text-white"
-                                    : "text-gray-600"
+                                    : dimmed
+                                      ? "text-gray-400"
+                                      : "text-gray-600"
                                 }`}
                               >
                                 {cell.day}
                               </span>
-                              {isOverdue && !cell.isToday && (
+                              {isOverdue && !cell.isToday && !dimmed && (
                                 <span className="text-red-400">
                                   <WarningIcon />
                                 </span>
                               )}
                             </div>
 
-                            {/* File entries */}
-                            <div className="space-y-0.5">
-                              {files.slice(0, maxVisible).map((f) => {
-                                const fileName = f.milestone.file_name || "Unknown";
-                                const truncated =
-                                  fileName.length > 18
-                                    ? fileName.slice(0, 16) + "…"
-                                    : fileName;
-                                return (
-                                  <button
-                                    key={f.milestone.document_id || f.milestone.id}
-                                    onClick={() => handleFileClick(f.milestone, cell.dateKey)}
-                                    className="w-full text-left flex items-center gap-1 px-1 py-0.5 rounded text-[10px] leading-tight hover:bg-[#6556d2]/10 transition-colors cursor-pointer group truncate"
-                                    title={`${fileName} — ${f.count} deadline${f.count !== 1 ? "s" : ""}`}
-                                  >
-                                    <span
-                                      className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${urgencyDotColor(f.maxUrgency)}`}
-                                    />
-                                    <span className={`truncate ${urgencyTextColor(f.maxUrgency)} group-hover:text-[#6556d2] font-medium`}>
-                                      {truncated}
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                              {files.length > maxVisible && (
-                                <span className="block px-1 text-[9px] text-gray-400 font-medium">
-                                  +{files.length - maxVisible} more
-                                </span>
-                              )}
-                            </div>
+                            {/* File entries — hidden when the upcoming filter dims this day */}
+                            {!dimmed && (
+                              <div className="space-y-0.5">
+                                {files.slice(0, maxVisible).map((f) => {
+                                  const fileName = f.milestone.file_name || "Unknown";
+                                  const truncated =
+                                    fileName.length > 18
+                                      ? fileName.slice(0, 16) + "…"
+                                      : fileName;
+                                  return (
+                                    <button
+                                      key={f.milestone.document_id || f.milestone.id}
+                                      onClick={() => handleFileClick(f.milestone, cell.dateKey)}
+                                      className="w-full text-left flex items-center gap-1 px-1 py-0.5 rounded text-[10px] leading-tight hover:bg-[#6556d2]/10 transition-colors cursor-pointer group truncate"
+                                      title={`${fileName} — ${f.count} deadline${f.count !== 1 ? "s" : ""}`}
+                                    >
+                                      <span
+                                        className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${urgencyDotColor(f.maxUrgency)}`}
+                                      />
+                                      <span className={`truncate ${urgencyTextColor(f.maxUrgency)} group-hover:text-[#6556d2] font-medium`}>
+                                        {truncated}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                                {files.length > maxVisible && (
+                                  <span className="block px-1 text-[9px] text-gray-400 font-medium">
+                                    +{files.length - maxVisible} more
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
                     </div>
 
                     {/* Legend */}
-                    <div className="flex items-center gap-4 mt-3 px-1">
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 mt-3 px-1 py-2 bg-gray-50/60 rounded-lg border border-gray-100">
                       <div className="flex items-center gap-1.5">
-                        <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
-                        <span className="text-[10px] text-gray-500">2-day reminder</span>
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500" />
+                        <span className="text-[10px] text-gray-600 font-medium">Critical Reminder <span className="text-gray-400">(&lt; 2 days)</span></span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
-                        <span className="text-[10px] text-gray-500">10-day reminder</span>
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" />
+                        <span className="text-[10px] text-gray-600 font-medium">Standard Reminder <span className="text-gray-400">(2–10 days)</span></span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="inline-block h-2 w-2 rounded-full bg-[#6556d2]" />
-                        <span className="text-[10px] text-gray-500">1-month reminder</span>
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm bg-blue-500" />
+                        <span className="text-[10px] text-gray-600 font-medium">Future Reminder <span className="text-gray-400">(&gt; 30 days)</span></span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm bg-gray-400" />
+                        <span className="text-[10px] text-gray-600 font-medium">Past <span className="text-gray-400">(overdue)</span></span>
                       </div>
                     </div>
                   </>
@@ -674,7 +761,7 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                                       <span>Page: {String(ev.deadline.section_index)}</span>
                                     )}
                                     <span className={`font-semibold ${urgencyTextColor(urgency)}`}>
-                                      {urgency === "high" ? "High Priority" : urgency === "medium" ? "Medium" : "Low"}
+                                      {urgencyLabel(urgency)}
                                     </span>
                                   </div>
                                 </div>
