@@ -294,8 +294,6 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
     dateKey: string;
     events: CalendarEvent[];
   } | null>(null);
-  const [showUpcomingOnly, setShowUpcomingOnly] = useState(false);
-
   // ── Derived data ────────────────────────────────────────────────────────────
   const allEvents = useMemo(() => buildCalendarEvents(data), [data]);
   const eventsByDate = useMemo(() => groupByDate(allEvents), [allEvents]);
@@ -340,18 +338,6 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
   const goToToday = useCallback(() => {
     const now = new Date();
     setSelectedMonth({ year: now.getFullYear(), month: now.getMonth() });
-    setShowUpcomingOnly(false);
-  }, []);
-
-  const toggleUpcoming = useCallback(() => {
-    setShowUpcomingOnly((prev) => {
-      if (!prev) {
-        // When activating the filter, also jump to today's month
-        const now = new Date();
-        setSelectedMonth({ year: now.getFullYear(), month: now.getMonth() });
-      }
-      return !prev;
-    });
   }, []);
 
   // ── Action handler (close both modals → fire callback) ────────────────────
@@ -430,15 +416,6 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
     (events: CalendarEvent[]): boolean =>
       events.some((ev) => getUrgency(ev.date) === "past"),
     []
-  );
-
-  /** Is this calendar cell date strictly before today? Used for the upcoming filter. */
-  const isDayInPast = useCallback(
-    (dateKey: string): boolean => {
-      if (!dateKey) return false;
-      return dateKey < todayKey;
-    },
-    [todayKey]
   );
 
   // ── Event click: file name in a day tile ──────────────────────────────────
@@ -539,16 +516,13 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                   >
                     Today
                   </button>
-                  <button
-                    onClick={toggleUpcoming}
-                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors cursor-pointer ${
-                      showUpcomingOnly
-                        ? "text-white bg-[#6556d2] border border-[#6556d2]"
-                        : "text-[#6556d2] border border-[#6556d2]/30 hover:bg-[#6556d2]/5"
-                    }`}
-                  >
-                    Upcoming Deadlines
-                  </button>
+                  {/* Non-clickable upcoming deadlines counter badge */}
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-[#6556d2] bg-[#6556d2]/8 border border-[#6556d2]/20 rounded-md select-none">
+                    Upcoming Deadlines:
+                    <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 text-[10px] font-bold text-white bg-[#6556d2] rounded-full">
+                      {upcomingCount}
+                    </span>
+                  </span>
                 </div>
               </div>
 
@@ -586,8 +560,6 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                           return <div key={idx} className="bg-gray-50/80 min-h-[90px]" />;
                         }
 
-                        const pastDay = isDayInPast(cell.dateKey);
-                        const dimmed = showUpcomingOnly && pastDay;
                         const files = uniqueFilesForDay(cell.events);
                         const isOverdue = hasOverdueInDay(cell.events);
                         const maxVisible = 2;
@@ -607,13 +579,7 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                             key={idx}
                             className={`min-h-[90px] p-1.5 relative transition-colors ${
                               cell.isToday ? "ring-2 ring-[#6556d2] ring-inset" : ""
-                            } ${
-                              dimmed
-                                ? "bg-gray-100/80 opacity-40 pointer-events-none"
-                                : topUrgency
-                                  ? urgencyBgTint(topUrgency)
-                                  : "bg-white"
-                            }`}
+                            } ${topUrgency ? urgencyBgTint(topUrgency) : "bg-white"}`}
                           >
                             {/* Day number */}
                             <div className="flex items-center justify-between mb-1">
@@ -621,52 +587,48 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                                 className={`text-xs font-medium leading-none ${
                                   cell.isToday
                                     ? "h-5 w-5 flex items-center justify-center rounded-full bg-[#6556d2] text-white"
-                                    : dimmed
-                                      ? "text-gray-400"
-                                      : "text-gray-600"
+                                    : "text-gray-600"
                                 }`}
                               >
                                 {cell.day}
                               </span>
-                              {isOverdue && !cell.isToday && !dimmed && (
+                              {isOverdue && !cell.isToday && (
                                 <span className="text-red-400">
                                   <WarningIcon />
                                 </span>
                               )}
                             </div>
 
-                            {/* File entries — hidden when the upcoming filter dims this day */}
-                            {!dimmed && (
-                              <div className="space-y-0.5">
-                                {files.slice(0, maxVisible).map((f) => {
-                                  const fileName = f.milestone.file_name || "Unknown";
-                                  const truncated =
-                                    fileName.length > 18
-                                      ? fileName.slice(0, 16) + "…"
-                                      : fileName;
-                                  return (
-                                    <button
-                                      key={f.milestone.document_id || f.milestone.id}
-                                      onClick={() => handleFileClick(f.milestone, cell.dateKey)}
-                                      className="w-full text-left flex items-center gap-1 px-1 py-0.5 rounded text-[10px] leading-tight hover:bg-[#6556d2]/10 transition-colors cursor-pointer group truncate"
-                                      title={`${fileName} — ${f.count} deadline${f.count !== 1 ? "s" : ""}`}
-                                    >
-                                      <span
-                                        className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${urgencyDotColor(f.maxUrgency)}`}
-                                      />
-                                      <span className={`truncate ${urgencyTextColor(f.maxUrgency)} group-hover:text-[#6556d2] font-medium`}>
-                                        {truncated}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                                {files.length > maxVisible && (
-                                  <span className="block px-1 text-[9px] text-gray-400 font-medium">
-                                    +{files.length - maxVisible} more
-                                  </span>
-                                )}
-                              </div>
-                            )}
+                            {/* File entries */}
+                            <div className="space-y-0.5">
+                              {files.slice(0, maxVisible).map((f) => {
+                                const fileName = f.milestone.file_name || "Unknown";
+                                const truncated =
+                                  fileName.length > 18
+                                    ? fileName.slice(0, 16) + "…"
+                                    : fileName;
+                                return (
+                                  <button
+                                    key={f.milestone.document_id || f.milestone.id}
+                                    onClick={() => handleFileClick(f.milestone, cell.dateKey)}
+                                    className="w-full text-left flex items-center gap-1 px-1 py-0.5 rounded text-[10px] leading-tight hover:bg-[#6556d2]/10 transition-colors cursor-pointer group truncate"
+                                    title={`${fileName} — ${f.count} deadline${f.count !== 1 ? "s" : ""}`}
+                                  >
+                                    <span
+                                      className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${urgencyDotColor(f.maxUrgency)}`}
+                                    />
+                                    <span className={`truncate ${urgencyTextColor(f.maxUrgency)} group-hover:text-[#6556d2] font-medium`}>
+                                      {truncated}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                              {files.length > maxVisible && (
+                                <span className="block px-1 text-[9px] text-gray-400 font-medium">
+                                  +{files.length - maxVisible} more
+                                </span>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
