@@ -766,6 +766,64 @@ function StructureDetailModal({
   );
 }
 
+// ── Vectorized Deadlines – urgency helpers (self-contained) ──────────────────
+
+type VDUrgency = "critical" | "standard" | "future" | "past";
+
+function vdGetUrgency(dateRaw: string): VDUrgency {
+  if (!dateRaw || dateRaw === "—" || dateRaw === "-") return "future";
+  // Attempt to parse the date using common formats
+  let parsed: Date | null = null;
+  if (dateRaw.includes("T")) {
+    const d = new Date(dateRaw);
+    if (!isNaN(d.getTime())) parsed = d;
+  }
+  if (!parsed && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
+    const d = new Date(dateRaw + "T00:00:00");
+    if (!isNaN(d.getTime())) parsed = d;
+  }
+  if (!parsed) {
+    const dotParts = dateRaw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    if (dotParts) {
+      const d = new Date(+dotParts[3], +dotParts[2] - 1, +dotParts[1]);
+      if (!isNaN(d.getTime())) parsed = d;
+    }
+  }
+  if (!parsed) {
+    const d = new Date(dateRaw);
+    if (!isNaN(d.getTime())) parsed = d;
+  }
+  if (!parsed) return "future";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(parsed);
+  target.setHours(0, 0, 0, 0);
+  const daysRemaining = Math.floor((target.getTime() - today.getTime()) / 86400000);
+  if (daysRemaining < 0) return "past";
+  if (daysRemaining < 2) return "critical";
+  if (daysRemaining <= 10) return "standard";
+  return "future";
+}
+
+function vdBadgeClasses(u: VDUrgency): string {
+  switch (u) {
+    case "critical": return "bg-red-100 text-red-700 border-red-200";
+    case "standard": return "bg-amber-100 text-amber-700 border-amber-200";
+    case "future":   return "bg-blue-100 text-blue-700 border-blue-200";
+    case "past":     return "bg-gray-100 text-gray-500 border-gray-200";
+  }
+}
+
+function vdBadgeLabel(u: VDUrgency): string {
+  switch (u) {
+    case "critical": return "Critical";
+    case "standard": return "Standard";
+    case "future":   return "Future";
+    case "past":     return "Past";
+  }
+}
+
 // ── Vectorized Deadlines Table Modal ──────────────────────────────────────────
 
 function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClose: () => void }) {
@@ -801,39 +859,71 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
         ) : (
           <div className="overflow-auto flex-1">
             <table className="w-full text-sm">
-              <thead className="top-0 z-10">
+              <thead className="sticky top-0 z-10">
                 <tr className="bg-[#6556d2]/5 border-b border-[#6556d2]/20">
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider">
                     Description
                   </th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
                     Deadline
                   </th>
+                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
+                    Urgency
+                  </th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
-                    Section Name
+                    Section
                   </th>
                   <th className="px-4 py-2.5 text-center text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
-                    Section Page
+                    Page
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {deadlines.map((dl, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="px-4 py-3 text-gray-700 text-xs leading-relaxed">
-                      {dl.description || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
-                      {dl.date_raw || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">
-                      {dl.section_title || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs text-center">
-                      {dl.section_index != null ? String(dl.section_index) : "—"}
-                    </td>
-                  </tr>
-                ))}
+                {deadlines.map((dl, idx) => {
+                  const urgency = vdGetUrgency(dl.date_raw);
+                  return (
+                    <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
+                      {/* Description + inline urgency dot — flex row for alignment */}
+                      <td className="px-4 py-3">
+                        <div className="flex flex-row items-center gap-2">
+                          <span
+                            className={`inline-block h-2 w-2 rounded-full flex-shrink-0 ${
+                              urgency === "critical" ? "bg-red-500"
+                              : urgency === "standard" ? "bg-amber-400"
+                              : urgency === "future" ? "bg-blue-500"
+                              : "bg-gray-400"
+                            }`}
+                          />
+                          <span className="text-gray-700 text-xs leading-relaxed">
+                            {dl.description || "—"}
+                          </span>
+                        </div>
+                      </td>
+                      {/* Deadline date */}
+                      <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                        {dl.date_raw || "—"}
+                      </td>
+                      {/* Urgency badge — centred, perfectly inline */}
+                      <td className="px-4 py-3">
+                        <div className="flex flex-row items-center justify-center">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-full border ${vdBadgeClasses(urgency)}`}
+                          >
+                            {vdBadgeLabel(urgency)}
+                          </span>
+                        </div>
+                      </td>
+                      {/* Section */}
+                      <td className="px-4 py-3 text-gray-600 text-xs">
+                        {dl.section_title || "—"}
+                      </td>
+                      {/* Page */}
+                      <td className="px-4 py-3 text-gray-600 text-xs text-center">
+                        {dl.section_index != null ? String(dl.section_index) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
