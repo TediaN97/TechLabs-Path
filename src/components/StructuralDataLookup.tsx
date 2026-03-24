@@ -1299,6 +1299,8 @@ function ImportantInfoModal({
 
 const RECORDS_PER_PAGE = 10;
 
+type DetailAction = "info" | "importantInfo" | "deadlines" | null;
+
 interface StructuralDataLookupProps {
   data: Milestone[];
   isLoading: boolean;
@@ -1306,7 +1308,9 @@ interface StructuralDataLookupProps {
   lastRefreshed: string;
   fetchError: string | null;
   detailMilestone: Milestone | null;
+  detailAction: DetailAction;
   onDetailStruct: (m: Milestone | null) => void;
+  onClearDetailAction: () => void;
   onDelete: (id: string) => void;
   isUploading?: boolean;
   uploadingFileName?: string;
@@ -1318,6 +1322,9 @@ export default function StructuralDataLookup({
   isRefreshing,
   lastRefreshed,
   fetchError,
+  detailMilestone,
+  detailAction,
+  onClearDetailAction,
   onDelete,
   isUploading = false,
   uploadingFileName = "",
@@ -1415,6 +1422,27 @@ export default function StructuralDataLookup({
       setImportantInfoLoading(false);
     }
   }, []);
+
+  // ── Bridge: Calendar / external → open the right modal ──
+  useEffect(() => {
+    if (!detailMilestone || !detailAction) return;
+    // Small delay to allow the Calendar portal to unmount first (prevents z-index flicker)
+    const timer = setTimeout(() => {
+      switch (detailAction) {
+        case "info":
+          handleDetail(detailMilestone);
+          break;
+        case "importantInfo":
+          handleImportantInfo(detailMilestone);
+          break;
+        case "deadlines":
+          handleAiAnalyzed(detailMilestone);
+          break;
+      }
+      onClearDetailAction();
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [detailMilestone, detailAction, handleDetail, handleImportantInfo, handleAiAnalyzed, onClearDetailAction]);
 
   const handleSort = useCallback((key: SortKey) => {
     setSortConfig((prev) =>

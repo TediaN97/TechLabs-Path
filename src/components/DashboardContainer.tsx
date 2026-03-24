@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useAgent } from "../hooks/useAgent";
-import type { Trigger, ExportFile } from "../hooks/useAgent";
+import type { Trigger, ExportFile, Milestone } from "../hooks/useAgent";
 import ChatInterface from "./ChatInterface";
 import StructuralDataLookup from "./StructuralDataLookup";
+import DeadlineCalendar from "./DeadlineCalendar";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 
@@ -435,6 +436,29 @@ export default function DashboardContainer() {
   const agent = useAgent();
   const isLoading = agent.isProcessing || agent.isExporting || agent.isUploading;
 
+  // Calendar → StructuralDataLookup modal bridge
+  const [detailAction, setDetailAction] = useState<"info" | "importantInfo" | "deadlines" | null>(null);
+
+  const handleCalendarInfo = useCallback((m: Milestone) => {
+    agent.setDetailMilestone(m);
+    setDetailAction("info");
+  }, [agent]);
+
+  const handleCalendarImportantInfo = useCallback((m: Milestone) => {
+    agent.setDetailMilestone(m);
+    setDetailAction("importantInfo");
+  }, [agent]);
+
+  const handleCalendarDeadlines = useCallback((m: Milestone) => {
+    agent.setDetailMilestone(m);
+    setDetailAction("deadlines");
+  }, [agent]);
+
+  const handleClearDetailAction = useCallback(() => {
+    setDetailAction(null);
+    agent.setDetailMilestone(null);
+  }, [agent]);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -450,6 +474,13 @@ export default function DashboardContainer() {
                 Processing…
               </span>
             )}
+            {/* Calendar icon trigger (top-right corner) */}
+            <DeadlineCalendar
+              milestones={agent.data}
+              onInfo={handleCalendarInfo}
+              onImportantInfo={handleCalendarImportantInfo}
+              onDeadlines={handleCalendarDeadlines}
+            />
             <div className="h-8 w-8 rounded-full bg-[#6556d2] flex items-center justify-center text-white text-xs font-bold">
               TL
             </div>
@@ -477,7 +508,9 @@ export default function DashboardContainer() {
               lastRefreshed={agent.lastRefreshed}
               fetchError={agent.fetchError}
               detailMilestone={agent.detailMilestone}
+              detailAction={detailAction}
               onDetailStruct={agent.setDetailMilestone}
+              onClearDetailAction={handleClearDetailAction}
               onDelete={agent.deleteMilestone}
               isUploading={agent.isUploading}
               uploadingFileName={agent.uploadingFileName}
