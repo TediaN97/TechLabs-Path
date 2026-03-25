@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { Milestone } from "../hooks/useAgent";
 import { useCalendarTimeframe } from "../hooks/useCalendarTimeframe";
 import type {
-  CalendarDayData,
+   CalendarDayData,
   CalendarDeadlineItem,
   DeadlineSeverity,
 } from "../services/calendarTimeframe";
@@ -293,227 +293,227 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
   const MAX_VISIBLE_FILES = 2;
 
   return (
-    <>
-      {/* Trigger Button */}
-      <button
-        onClick={() => setIsOpen(true)}
-        className="relative inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#6556d2] bg-[#6556d2]/10 border border-[#6556d2]/20 rounded-lg hover:bg-[#6556d2]/20 transition-colors cursor-pointer"
-        title="Deadline Calendar"
-      >
-        <CalendarButtonIcon />
-        <span className="hidden sm:inline">Calendar</span>
-        {upcomingCount > 0 && (
-          <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 text-[10px] font-bold text-white bg-[#6556d2] rounded-full">
-            {upcomingCount > 99 ? "99+" : upcomingCount}
-          </span>
-        )}
-        {overdueCount > 0 && (
-          <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-white" />
-        )}
-      </button>
+  <>
+    {/* Trigger Button */}
+    <button
+      onClick={() => setIsOpen(true)}
+      className="relative inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#6556d2] bg-[#6556d2]/10 border border-[#6556d2]/20 rounded-lg hover:bg-[#6556d2]/20 transition-colors cursor-pointer"
+      title="Deadline Calendar"
+    >
+      <CalendarButtonIcon />
+      <span className="hidden sm:inline">Calendar</span>
+      {upcomingCount > 0 && (
+        <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 text-[10px] font-bold text-white bg-[#6556d2] rounded-full">
+          {upcomingCount > 99 ? "99+" : upcomingCount}
+        </span>
+      )}
+      {overdueCount > 0 && (
+        <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-white" />
+      )}
+    </button>
 
-      {/* Main Calendar Modal */}
-      {isOpen &&
-        createPortal(
+    {/* Main Calendar Modal */}
+    {isOpen &&
+      createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 animate-[fadeIn_150ms_ease-out]"
+          onClick={() => {
+            if (!selectedDay) setIsOpen(false);
+          }}
+        >
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 animate-[fadeIn_150ms_ease-out]"
-            onClick={() => {
-              if (!selectedDay) setIsOpen(false);
-            }}
+            className="bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-4 overflow-hidden max-h-[90vh] flex flex-col animate-[fadeIn_150ms_ease-out]"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div
-              className="bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-4 overflow-hidden max-h-[90vh] flex flex-col animate-[fadeIn_150ms_ease-out]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="px-6 py-4 bg-[#6556d2] flex items-center justify-between flex-shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-lg bg-white/20 flex items-center justify-center">
+            {/* Header */}
+            <div className="px-6 py-4 bg-[#6556d2] flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-lg bg-white/20 flex items-center justify-center">
                     <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                      <line x1="16" y1="2" x2="16" y2="6" />
-                      <line x1="8" y1="2" x2="8" y2="6" />
-                      <line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-white">Deadline Calendar</h3>
-                    <p className="text-[11px] text-white/70 mt-0.5">
-                      {totalInWindow} deadline{totalInWindow !== 1 ? "s" : ""} in {MONTH_NAMES[month]} {year}
-                    </p>
-                  </div>
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                    <line x1="16" y1="2" x2="16" y2="6" />
+                    <line x1="8" y1="2" x2="8" y2="6" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
                 </div>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="text-white/70 hover:text-white cursor-pointer text-lg leading-none"
-                >
-                  &times;
-                </button>
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Deadline Calendar</h3>
+                  <p className="text-[11px] text-white/70 mt-0.5">
+                      {totalInWindow} deadline{totalInWindow !== 1 ? "s" : ""} in {MONTH_NAMES[month]} {year}
+                  </p>
+                </div>
               </div>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-white/70 hover:text-white cursor-pointer text-lg leading-none"
+              >
+                &times;
+              </button>
+            </div>
 
-              {/* Month Navigation + Toolbar Controls */}
-              <CalendarToolbar
-                monthLabel={`${MONTH_NAMES[month]} ${year}`}
-                upcomingCount={upcomingCount}
-                onPrevMonth={prevMonth}
-                onNextMonth={nextMonth}
-                onGoToToday={goToToday}
-              />
+            {/* Month Navigation + Toolbar Controls */}
+            <CalendarToolbar
+              monthLabel={`${MONTH_NAMES[month]} ${year}`}
+              upcomingCount={upcomingCount}
+              onPrevMonth={prevMonth}
+              onNextMonth={nextMonth}
+              onGoToToday={goToToday}
+            />
 
-              {/* Calendar Grid */}
-              <div className="overflow-auto flex-1 p-4 relative">
-                {/* Fetching overlay */}
-                {isTimeframeFetching && !isTimeframeLoading && (
-                  <div className="absolute top-2 right-6 z-10 flex items-center gap-1.5 px-2.5 py-1 bg-white/90 border border-[#6556d2]/20 rounded-full shadow-sm">
-                    <span className="h-2 w-2 rounded-full bg-[#6556d2] animate-pulse" />
-                    <span className="text-[10px] text-[#6556d2] font-medium">Loading…</span>
-                  </div>
-                )}
+            {/* Calendar Grid */}
+            <div className="overflow-auto flex-1 p-4 relative">
+              {/* Fetching overlay */}
+              {isTimeframeFetching && !isTimeframeLoading && (
+                <div className="absolute top-2 right-6 z-10 flex items-center gap-1.5 px-2.5 py-1 bg-white/90 border border-[#6556d2]/20 rounded-full shadow-sm">
+                  <span className="h-2 w-2 rounded-full bg-[#6556d2] animate-pulse" />
+                  <span className="text-[10px] text-[#6556d2] font-medium">Loading…</span>
+                </div>
+              )}
 
-                {/* Error banner */}
-                {timeframeError && (
-                  <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+              {/* Error banner */}
+              {timeframeError && (
+                <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
                     <span className="text-red-500"><WarningIcon /></span>
-                    <span className="text-xs text-red-600">
-                      Failed to load calendar data: {timeframeError}
-                    </span>
-                  </div>
-                )}
+                  <span className="text-xs text-red-600">
+                    Failed to load calendar data: {timeframeError}
+                  </span>
+                </div>
+              )}
 
-                {/* Range indicator */}
-                {timeframe && (
-                  <div className="mb-2 text-[10px] text-gray-400 text-right">
-                    {timeframe.startDate} — {timeframe.endDate}
-                  </div>
-                )}
+              {/* Range indicator */}
+              {timeframe && (
+                <div className="mb-2 text-[10px] text-gray-400 text-right">
+                  {timeframe.startDate} — {timeframe.endDate}
+                </div>
+              )}
 
-                {isTimeframeLoading ? (
-                  <div className="flex flex-col items-center justify-center py-20 gap-3">
-                    <div className="h-8 w-8 border-2 border-[#6556d2]/30 border-t-[#6556d2] rounded-full animate-spin" />
-                    <p className="text-sm text-gray-400">Loading calendar data…</p>
-                  </div>
-                ) : (
-                  <>
-                    {/* Day headers */}
-                    <div className="grid grid-cols-7 gap-px mb-1">
-                      {DAY_HEADERS.map((d) => (
+              {isTimeframeLoading ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-3">
+                  <div className="h-8 w-8 border-2 border-[#6556d2]/30 border-t-[#6556d2] rounded-full animate-spin" />
+                  <p className="text-sm text-gray-400">Loading calendar data…</p>
+                </div>
+              ) : (
+                <>
+                  {/* Day headers */}
+                  <div className="grid grid-cols-7 gap-px mb-1">
+                    {DAY_HEADERS.map((d) => (
                         <div key={d} className="px-2 py-1.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-                          {d}
-                        </div>
-                      ))}
-                    </div>
+                        {d}
+                      </div>
+                    ))}
+                  </div>
 
-                    {/* Day cells */}
-                    <div className="grid grid-cols-7 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200">
-                      {cells.map((cell, idx) => {
-                        if (cell.day === null) {
-                          return <div key={idx} className="bg-gray-50/80 min-h-[90px]" />;
-                        }
+                  {/* Day cells */}
+                  <div className="grid grid-cols-7 gap-px bg-gray-200 rounded-lg overflow-hidden border border-gray-200">
+                    {cells.map((cell, idx) => {
+                      if (cell.day === null) {
+                        return <div key={idx} className="bg-gray-50/80 min-h-[90px]" />;
+                      }
 
-                        const dayData = cell.dayData;
-                        const hasDeadlines = dayData !== null && dayData.items.length > 0;
-                        const fileGroups = hasDeadlines ? groupItemsByFile(dayData.items) : [];
-                        const topSev = hasDeadlines ? getTopSeverity(dayData) : null;
-                        const hasPast = hasDeadlines && dayData.items.some((i) => i.severity === "past");
+                      const dayData = cell.dayData;
+                      const hasDeadlines = dayData !== null && dayData.items.length > 0;
+                      const fileGroups = hasDeadlines ? groupItemsByFile(dayData.items) : [];
+                      const topSev = hasDeadlines ? getTopSeverity(dayData) : null;
+                      const hasPast = hasDeadlines && dayData.items.some((i) => i.severity === "past");
                         const hasCritical = hasDeadlines && dayData.items.some((i) => i.severity === "critical");
                         /** The severity to display for the warning indicator (critical takes priority). */
                         const indicatorSeverity = hasCritical ? "critical" as const : hasPast ? "past" as const : null;
 
-                        return (
-                          <div
-                            key={idx}
-                            className={`min-h-[90px] p-1.5 relative transition-colors ${
-                              cell.isToday ? "ring-2 ring-[#6556d2] ring-inset" : ""
-                            } ${topSev ? severityBgTint(topSev) : "bg-white"}`}
-                          >
+                      return (
+                        <div
+                          key={idx}
+                          className={`min-h-[90px] p-1.5 relative transition-colors ${
+                            cell.isToday ? "ring-2 ring-[#6556d2] ring-inset" : ""
+                          } ${topSev ? severityBgTint(topSev) : "bg-white"}`}
+                        >
                             {/* Day number + severity indicator */}
-                            <div className="flex items-center justify-between mb-1">
-                              <span
-                                className={`text-xs font-medium leading-none ${
-                                  cell.isToday
-                                    ? "h-5 w-5 flex items-center justify-center rounded-full bg-[#6556d2] text-white"
-                                    : "text-gray-600"
-                                }`}
-                              >
-                                {cell.day}
-                              </span>
+                          <div className="flex items-center justify-between mb-1">
+                            <span
+                              className={`text-xs font-medium leading-none ${
+                                cell.isToday
+                                  ? "h-5 w-5 flex items-center justify-center rounded-full bg-[#6556d2] text-white"
+                                  : "text-gray-600"
+                              }`}
+                            >
+                              {cell.day}
+                            </span>
                               {indicatorSeverity && !cell.isToday && (
                                 <DeadlineSeverityIndicator severity={indicatorSeverity} />
-                              )}
-                            </div>
-
-                            {/* Deadline file entries */}
-                            {hasDeadlines && (
-                              <div className="space-y-0.5">
-                                {fileGroups.slice(0, MAX_VISIBLE_FILES).map((fg) => {
-                                  const truncated =
-                                    fg.fileName.length > 18
-                                      ? fg.fileName.slice(0, 16) + "…"
-                                      : fg.fileName;
-                                  return (
-                                    <button
-                                      key={fg.fileName}
-                                      onClick={() => setSelectedDay(dayData)}
-                                      className="w-full text-left flex items-center gap-1 px-1 py-0.5 rounded text-[10px] leading-tight hover:bg-[#6556d2]/10 transition-colors cursor-pointer group truncate"
-                                      title={`${fg.fileName} — ${fg.count} deadline${fg.count !== 1 ? "s" : ""}`}
-                                    >
-                                      <span className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${severityDotColor(fg.maxSeverity)}`} />
-                                      <span className={`truncate ${severityTextColor(fg.maxSeverity)} group-hover:text-[#6556d2] font-medium`}>
-                                        {truncated}
-                                      </span>
-                                      {fg.count > 1 && (
-                                        <span className="text-[9px] text-gray-400 flex-shrink-0">({fg.count})</span>
-                                      )}
-                                    </button>
-                                  );
-                                })}
-                                {fileGroups.length > MAX_VISIBLE_FILES && (
-                                  <button
-                                    onClick={() => setSelectedDay(dayData)}
-                                    className="block px-1 text-[9px] text-gray-400 font-medium hover:text-[#6556d2] cursor-pointer"
-                                  >
-                                    +{fileGroups.length - MAX_VISIBLE_FILES} more
-                                  </button>
-                                )}
-                              </div>
                             )}
                           </div>
-                        );
-                      })}
-                    </div>
 
-                    {/* Legend */}
-                    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 mt-3 px-1 py-2 bg-gray-50/60 rounded-lg border border-gray-100">
-                      <div className="flex items-center gap-1.5">
-                        <span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500" />
+                          {/* Deadline file entries */}
+                          {hasDeadlines && (
+                            <div className="space-y-0.5">
+                              {fileGroups.slice(0, MAX_VISIBLE_FILES).map((fg) => {
+                                const truncated =
+                                  fg.fileName.length > 18
+                                    ? fg.fileName.slice(0, 16) + "…"
+                                    : fg.fileName;
+                                return (
+                                  <button
+                                    key={fg.fileName}
+                                    onClick={() => setSelectedDay(dayData)}
+                                    className="w-full text-left flex items-center gap-1 px-1 py-0.5 rounded text-[10px] leading-tight hover:bg-[#6556d2]/10 transition-colors cursor-pointer group truncate"
+                                      title={`${fg.fileName} — ${fg.count} deadline${fg.count !== 1 ? "s" : ""}`}
+                                  >
+                                      <span className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${severityDotColor(fg.maxSeverity)}`} />
+                                      <span className={`truncate ${severityTextColor(fg.maxSeverity)} group-hover:text-[#6556d2] font-medium`}>
+                                      {truncated}
+                                    </span>
+                                    {fg.count > 1 && (
+                                        <span className="text-[9px] text-gray-400 flex-shrink-0">({fg.count})</span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                              {fileGroups.length > MAX_VISIBLE_FILES && (
+                                <button
+                                  onClick={() => setSelectedDay(dayData)}
+                                  className="block px-1 text-[9px] text-gray-400 font-medium hover:text-[#6556d2] cursor-pointer"
+                                >
+                                  +{fileGroups.length - MAX_VISIBLE_FILES} more
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Legend */}
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 mt-3 px-1 py-2 bg-gray-50/60 rounded-lg border border-gray-100">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500" />
                         <span className="text-[10px] text-gray-600 font-medium">Critical Reminder <span className="text-gray-400">(&lt; 2 days)</span></span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" />
-                        <span className="text-[10px] text-gray-600 font-medium">Warning Reminder<span className="text-gray-400">(2–10 days)</span></span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="inline-block h-2.5 w-2.5 rounded-sm bg-blue-500" />
-                        <span className="text-[10px] text-gray-600 font-medium">Future Reminder<span className="text-gray-400">(&gt; 10 days)</span></span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="inline-block h-2.5 w-2.5 rounded-sm bg-gray-400" />
-                        <span className="text-[10px] text-gray-600 font-medium">Past <span className="text-gray-400">(overdue)</span></span>
-                      </div>
                     </div>
-                  </>
-                )}
-              </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" />
+                        <span className="text-[10px] text-gray-600 font-medium">Warning Reminder<span className="text-gray-400">(2–10 days)</span></span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-blue-500" />
+                        <span className="text-[10px] text-gray-600 font-medium">Future Reminder<span className="text-gray-400">(&gt; 10 days)</span></span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-gray-400" />
+                        <span className="text-[10px] text-gray-600 font-medium">Past <span className="text-gray-400">(overdue)</span></span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
 
-              {/* Footer */}
-              <div className="px-6 py-3 border-t border-gray-100 flex justify-end flex-shrink-0 bg-gray-50/50">
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="px-4 py-1.5 text-xs font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-gray-100 flex justify-end flex-shrink-0 bg-gray-50/50">
+              <button
+                onClick={() => setIsOpen(false)}
+                className="px-4 py-1.5 text-xs font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
             </div>
 
             {/* ── Secondary Modal: Deadlines for selected day ─────────────── */}
@@ -601,8 +601,8 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
           </div>,
           document.body
         )}
-    </>
-  );
+  </>
+);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
