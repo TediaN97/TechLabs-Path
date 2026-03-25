@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { Milestone, DeadlineEntry } from "../hooks/useAgent";
 
@@ -272,6 +272,133 @@ function WarningIcon() {
   );
 }
 
+// ── Range Types ──────────────────────────────────────────────────────────────────
+
+export interface CalendarRange {
+  start: string; // YYYY-MM-DD
+  end: string;   // YYYY-MM-DD
+}
+
+// ── Timeframe Selection Modal ────────────────────────────────────────────────────
+
+function TimeframeSelectionModal({
+  onConfirm,
+  onClose,
+}: {
+  onConfirm: (range: { start: Date; end: Date }) => void;
+  onClose: () => void;
+}) {
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function handleConfirm() {
+    if (!startDate || !endDate) {
+      setError("Please select both a start and end date.");
+      return;
+    }
+    const s = new Date(startDate + "T00:00:00");
+    const e = new Date(endDate + "T00:00:00");
+    if (isNaN(s.getTime()) || isNaN(e.getTime())) {
+      setError("Invalid date format.");
+      return;
+    }
+    if (s > e) {
+      setError("Start date must be before end date.");
+      return;
+    }
+    setError(null);
+    onConfirm({ start: s, end: e });
+  }
+
+  // Close on Escape
+  useEffect(() => {
+    function handleKey(ev: KeyboardEvent) {
+      if (ev.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 animate-[fadeIn_150ms_ease-out]"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-[fadeIn_150ms_ease-out]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-6 py-4 bg-[#6556d2] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-white/20 flex items-center justify-center">
+              <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white">Select Timeframe</h3>
+              <p className="text-[11px] text-white/70 mt-0.5">Choose a date range to view deadlines</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-white/70 hover:text-white cursor-pointer text-lg leading-none"
+          >
+            &times;
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Start Date</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setError(null); }}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2] transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">End Date</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setError(null); }}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2] transition-colors"
+            />
+          </div>
+          {error && (
+            <p className="text-xs text-red-500 font-medium">{error}</p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-end gap-2 bg-gray-50/50">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            className="px-4 py-1.5 text-xs font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
+          >
+            Show Calendar
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ── Props ────────────────────────────────────────────────────────────────────────
 
 export type CalendarActionType = "detail" | "importantInfo" | "aiDeadlines" | "vectorDeadlines";
@@ -279,12 +406,45 @@ export type CalendarActionType = "detail" | "importantInfo" | "aiDeadlines" | "v
 interface DeadlineCalendarProps {
   data: Milestone[];
   onAction: (type: CalendarActionType, milestone: Milestone) => void;
+  /** Persisted date range — if set, calendar opens directly without timeframe selection */
+  persistedRange: CalendarRange | null;
+  /** Called when user confirms a range selection */
+  onRangeChange: (range: { start: Date | null; end: Date | null }) => void;
+}
+
+// ── API Response Types ──────────────────────────────────────────────────────────
+
+interface ApiCalendarItem {
+  file_name: string;
+  section_title: string;
+  date_parsed: string;
+  date_raw: string;
+  description: string;
+  document_description: string | null;
+}
+
+interface ApiCalendarDay {
+  date: string;
+  count: number;
+  documents_affected: string[];
+  items: ApiCalendarItem[];
+}
+
+interface ApiCalendarResponse {
+  ok: boolean;
+  generated_at: string;
+  today: string;
+  window_start: string;
+  window_end: string;
+  total_in_window: number;
+  calendar: ApiCalendarDay[];
 }
 
 // ── Component ───────────────────────────────────────────────────────────────────
 
-export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarProps) {
+export default function DeadlineCalendar({ data, onAction, persistedRange, onRangeChange }: DeadlineCalendarProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [showTimeframeModal, setShowTimeframeModal] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -294,51 +454,304 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
     dateKey: string;
     events: CalendarEvent[];
   } | null>(null);
+
+  // ── API-fetched events state ───────────────────────────────────────────────
+  const [apiEvents, setApiEvents] = useState<CalendarEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // ── Fetch deadlines from the webhook API ───────────────────────────────────
+  const fetchDeadlines = useCallback(async (startISO: string, endISO: string) => {
+    setIsLoading(true);
+    setFetchError(null);
+    setApiEvents([]);
+
+    const url = `https://20.110.72.120.nip.io/webhook/calendar/timeframe?start_date=${startISO}&end_date=${endISO}`;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
+      const text = await res.text();
+      if (!text || text.trim() === "") {
+        // Empty response — no deadlines in this range
+        setApiEvents([]);
+        return;
+      }
+
+      const json: ApiCalendarResponse = JSON.parse(text);
+
+      if (!json.calendar || !Array.isArray(json.calendar)) {
+        setApiEvents([]);
+        return;
+      }
+
+      // Map API items → CalendarEvent[], matching milestones by file_name
+      const events: CalendarEvent[] = [];
+      for (const dayGroup of json.calendar) {
+        for (const item of dayGroup.items) {
+          const dateParsed = item.date_parsed || dayGroup.date;
+          const date = new Date(dateParsed + "T00:00:00");
+          if (isNaN(date.getTime())) continue;
+
+          // Try to match a loaded milestone by file_name (normalized)
+          const norm = (s: string) => s.trim().toLowerCase();
+          const matched = data.find((m) => norm(m.file_name) === norm(item.file_name));
+
+          // Build a synthetic Milestone if no local match exists
+          const milestone: Milestone = matched || {
+            id: `api-${item.file_name}-${dateParsed}`,
+            deadline_date: dateParsed,
+            milestone_name: item.section_title || item.description,
+            document_ref: "",
+            context: item.description,
+            status: "pending" as const,
+            raw_status: "pending",
+            file_name: item.file_name,
+            upload_time: "",
+            description: item.description,
+            lender: "",
+            deadlines: [{
+              description: item.description,
+              date_raw: item.date_raw,
+              date_parsed: dateParsed,
+              section_title: item.section_title,
+              section_index: 0,
+            }],
+            borrower: "",
+          };
+
+          // Build a DeadlineEntry for this specific item
+          const deadline: DeadlineEntry = {
+            description: item.description,
+            date_raw: item.date_raw,
+            date_parsed: dateParsed,
+            section_title: item.section_title,
+            section_index: 0,
+          };
+
+          events.push({
+            milestone,
+            deadline,
+            date,
+            dateKey: toDateKey(date),
+          });
+        }
+      }
+
+      setApiEvents(events);
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setFetchError("Request timed out. Please try again.");
+      } else {
+        setFetchError(err instanceof Error ? err.message : "Failed to load deadlines");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [data]);
+
+  // ── Calendar button click: show timeframe modal or open calendar directly ──
+  const handleCalendarButtonClick = useCallback(() => {
+    if (persistedRange) {
+      // Range already exists — open calendar directly
+      const start = new Date(persistedRange.start + "T00:00:00");
+      setSelectedMonth({ year: start.getFullYear(), month: start.getMonth() });
+      setIsOpen(true);
+      // Re-fetch if we have no data yet
+      if (apiEvents.length === 0 && !isLoading) {
+        fetchDeadlines(persistedRange.start, persistedRange.end);
+      }
+    } else {
+      // No range — show timeframe selection
+      setShowTimeframeModal(true);
+    }
+  }, [persistedRange, apiEvents.length, isLoading, fetchDeadlines]);
+
+  // ── Handle timeframe confirmation ──────────────────────────────────────────
+  const handleTimeframeConfirm = useCallback(
+    (range: { start: Date; end: Date }) => {
+      onRangeChange({ start: range.start, end: range.end });
+      setShowTimeframeModal(false);
+      setSelectedMonth({ year: range.start.getFullYear(), month: range.start.getMonth() });
+      setIsOpen(true);
+      // Fetch deadlines from the API
+      const startISO = toDateKey(range.start);
+      const endISO = toDateKey(range.end);
+      fetchDeadlines(startISO, endISO);
+    },
+    [onRangeChange, fetchDeadlines]
+  );
+
+  // ── Change Range: reset persisted range and show timeframe modal ───────────
+  const handleChangeRange = useCallback(() => {
+    onRangeChange({ start: null, end: null });
+    setIsOpen(false);
+    setSelectedEvent(null);
+    setApiEvents([]);
+    setFetchError(null);
+    // Show timeframe modal after a tick so the calendar closes first
+    requestAnimationFrame(() => {
+      setShowTimeframeModal(true);
+    });
+  }, [onRangeChange]);
+
   // ── Derived data ────────────────────────────────────────────────────────────
-  const allEvents = useMemo(() => buildCalendarEvents(data), [data]);
-  const eventsByDate = useMemo(() => groupByDate(allEvents), [allEvents]);
+  // Combine local milestone events with API-fetched events
+  const localEvents = useMemo(() => buildCalendarEvents(data), [data]);
 
-  // Badge count: upcoming deadlines (today + future)
-  const upcomingCount = useMemo(() => {
+  // Merge: API events take priority, then local events (deduplicated by file+date)
+  const allEvents = useMemo(() => {
+    if (apiEvents.length > 0) {
+      // Use API events as primary source, supplement with local
+      const seen = new Set<string>();
+      const merged: CalendarEvent[] = [];
+      for (const ev of apiEvents) {
+        const key = `${ev.milestone.file_name}|${ev.dateKey}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(ev);
+        }
+      }
+      for (const ev of localEvents) {
+        const key = `${ev.milestone.file_name}|${ev.dateKey}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(ev);
+        }
+      }
+      return merged;
+    }
+    return localEvents;
+  }, [apiEvents, localEvents]);
+
+  // Filter events by persisted range
+  const rangeFilteredEvents = useMemo(() => {
+    if (!persistedRange) return allEvents;
+    const rangeStart = new Date(persistedRange.start + "T00:00:00");
+    const rangeEnd = new Date(persistedRange.end + "T00:00:00");
+    rangeStart.setHours(0, 0, 0, 0);
+    rangeEnd.setHours(23, 59, 59, 999);
+    return allEvents.filter((ev) => ev.date >= rangeStart && ev.date <= rangeEnd);
+  }, [allEvents, persistedRange]);
+
+  const eventsByDate = useMemo(() => groupByDate(rangeFilteredEvents), [rangeFilteredEvents]);
+
+  // ── Upcoming Deadlines dropdown ────────────────────────────────────────
+  const [upcomingDropdownOpen, setUpcomingDropdownOpen] = useState(false);
+  const [highlightedDay, setHighlightedDay] = useState<string | null>(null);
+  const upcomingBadgeRef = useRef<HTMLButtonElement>(null);
+  const upcomingDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Sorted list of upcoming (non-overdue) deadlines within the range
+  const upcomingDeadlinesList = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const unique = new Set<string>();
-    for (const ev of allEvents) {
-      if (ev.date >= today) unique.add(ev.dateKey + "|" + (ev.milestone.document_id || ev.milestone.id));
-    }
-    return unique.size;
-  }, [allEvents]);
+    return rangeFilteredEvents
+      .filter((ev) => ev.date >= today)
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+  }, [rangeFilteredEvents]);
 
-  // Overdue count
-  const overdueCount = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const unique = new Set<string>();
-    for (const ev of allEvents) {
-      if (ev.date < today) unique.add(ev.dateKey + "|" + (ev.milestone.document_id || ev.milestone.id));
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!upcomingDropdownOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (
+        upcomingDropdownRef.current && !upcomingDropdownRef.current.contains(e.target as Node) &&
+        upcomingBadgeRef.current && !upcomingBadgeRef.current.contains(e.target as Node)
+      ) {
+        setUpcomingDropdownOpen(false);
+      }
     }
-    return unique.size;
-  }, [allEvents]);
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [upcomingDropdownOpen]);
 
-  // ── Month navigation ──────────────────────────────────────────────────────
+  // Clear highlight animation after 2 seconds
+  useEffect(() => {
+    if (!highlightedDay) return;
+    const timer = setTimeout(() => setHighlightedDay(null), 2000);
+    return () => clearTimeout(timer);
+  }, [highlightedDay]);
+
+  // Jump to a specific deadline's date on the calendar
+  const jumpToDeadline = useCallback((ev: CalendarEvent) => {
+    const targetYear = ev.date.getFullYear();
+    const targetMonth = ev.date.getMonth();
+    // Navigate to the month if needed
+    if (targetYear !== selectedMonth.year || targetMonth !== selectedMonth.month) {
+      setSelectedMonth({ year: targetYear, month: targetMonth });
+    }
+    // Highlight the day cell
+    setHighlightedDay(ev.dateKey);
+    // Auto-open detail modal for this entry after a brief delay
+    setTimeout(() => {
+      const eventsForFile = (eventsByDate[ev.dateKey] || rangeFilteredEvents.filter(e => e.dateKey === ev.dateKey))
+        .filter(e => (e.milestone.document_id || e.milestone.id) === (ev.milestone.document_id || ev.milestone.id));
+      setSelectedEvent({
+        milestone: ev.milestone,
+        dateKey: ev.dateKey,
+        events: eventsForFile.length > 0 ? eventsForFile : [ev],
+      });
+    }, 350);
+    setUpcomingDropdownOpen(false);
+  }, [selectedMonth, eventsByDate, rangeFilteredEvents]);
+
+  // Badge click handler
+  const handleUpcomingClick = useCallback(() => {
+    if (upcomingDeadlinesList.length === 0) return;
+    if (upcomingDeadlinesList.length === 1) {
+      // Single deadline — jump directly
+      jumpToDeadline(upcomingDeadlinesList[0]);
+    } else {
+      setUpcomingDropdownOpen((v) => !v);
+    }
+  }, [upcomingDeadlinesList, jumpToDeadline]);
+
+  // ── Month navigation with range constraints ─────────────────────────────
+  const { canPrev, canNext } = useMemo(() => {
+    if (!persistedRange) return { canPrev: true, canNext: true };
+    const rangeStart = new Date(persistedRange.start + "T00:00:00");
+    const rangeEnd = new Date(persistedRange.end + "T00:00:00");
+    const startYM = rangeStart.getFullYear() * 12 + rangeStart.getMonth();
+    const endYM = rangeEnd.getFullYear() * 12 + rangeEnd.getMonth();
+    const currentYM = selectedMonth.year * 12 + selectedMonth.month;
+    return { canPrev: currentYM > startYM, canNext: currentYM < endYM };
+  }, [persistedRange, selectedMonth]);
+
   const prevMonth = useCallback(() => {
+    if (!canPrev) return;
     setSelectedMonth((prev) => {
       const m = prev.month - 1;
       return m < 0 ? { year: prev.year - 1, month: 11 } : { year: prev.year, month: m };
     });
-  }, []);
+  }, [canPrev]);
 
   const nextMonth = useCallback(() => {
+    if (!canNext) return;
     setSelectedMonth((prev) => {
       const m = prev.month + 1;
       return m > 11 ? { year: prev.year + 1, month: 0 } : { year: prev.year, month: m };
     });
-  }, []);
+  }, [canNext]);
 
   const goToToday = useCallback(() => {
     const now = new Date();
+    if (persistedRange) {
+      const rangeStart = new Date(persistedRange.start + "T00:00:00");
+      const rangeEnd = new Date(persistedRange.end + "T00:00:00");
+      const todayYM = now.getFullYear() * 12 + now.getMonth();
+      const startYM = rangeStart.getFullYear() * 12 + rangeStart.getMonth();
+      const endYM = rangeEnd.getFullYear() * 12 + rangeEnd.getMonth();
+      if (todayYM < startYM || todayYM > endYM) return; // Today outside range
+    }
     setSelectedMonth({ year: now.getFullYear(), month: now.getMonth() });
-  }, []);
+  }, [persistedRange]);
 
   // ── Action handler (close both modals → fire callback) ────────────────────
   const handleAction = useCallback(
@@ -363,13 +776,14 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
     if (!isOpen) return;
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        if (upcomingDropdownOpen) { setUpcomingDropdownOpen(false); return; }
         if (selectedEvent) setSelectedEvent(null);
         else setIsOpen(false);
       }
     }
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [isOpen, selectedEvent]);
+  }, [isOpen, selectedEvent, upcomingDropdownOpen]);
 
   // ── Grid computation ──────────────────────────────────────────────────────
   const { year, month } = selectedMonth;
@@ -433,22 +847,22 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
 
   return (
     <>
+      {/* Timeframe Selection Modal */}
+      {showTimeframeModal && (
+        <TimeframeSelectionModal
+          onConfirm={handleTimeframeConfirm}
+          onClose={() => setShowTimeframeModal(false)}
+        />
+      )}
+
       {/* Trigger Button */}
       <button
-        onClick={() => setIsOpen(true)}
+        onClick={handleCalendarButtonClick}
         className="relative inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#6556d2] bg-[#6556d2]/10 border border-[#6556d2]/20 rounded-lg hover:bg-[#6556d2]/20 transition-colors cursor-pointer"
         title="Deadline Calendar"
       >
         <CalendarButtonIcon />
         <span className="hidden sm:inline">Calendar</span>
-        {upcomingCount > 0 && (
-          <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 text-[10px] font-bold text-white bg-[#6556d2] rounded-full">
-            {upcomingCount > 99 ? "99+" : upcomingCount}
-          </span>
-        )}
-        {overdueCount > 0 && (
-          <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-white" />
-        )}
       </button>
 
       {/* Main Calendar Modal */}
@@ -478,16 +892,33 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                   <div>
                     <h3 className="text-sm font-semibold text-white">Deadline Calendar</h3>
                     <p className="text-[11px] text-white/70 mt-0.5">
-                      {allEvents.length} deadline{allEvents.length !== 1 ? "s" : ""} across {data.length} document{data.length !== 1 ? "s" : ""}
+                      {isLoading
+                        ? "Loading deadlines…"
+                        : `${rangeFilteredEvents.length} deadline${rangeFilteredEvents.length !== 1 ? "s" : ""} across ${data.length} document${data.length !== 1 ? "s" : ""}`}
+                      {persistedRange && !isLoading && (
+                        <span className="ml-1.5">
+                          &middot; {persistedRange.start} to {persistedRange.end}
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="text-white/70 hover:text-white cursor-pointer text-lg leading-none"
-                >
-                  &times;
-                </button>
+                <div className="flex items-center gap-2">
+                  {/* Change Range button */}
+                  <button
+                    onClick={handleChangeRange}
+                    className="px-2.5 py-1 text-[11px] font-medium text-white/90 bg-white/20 border border-white/30 rounded-md hover:bg-white/30 transition-colors cursor-pointer"
+                    title="Change the selected date range"
+                  >
+                    Change Range
+                  </button>
+                  <button
+                    onClick={() => setIsOpen(false)}
+                    className="text-white/70 hover:text-white cursor-pointer text-lg leading-none"
+                  >
+                    &times;
+                  </button>
+                </div>
               </div>
 
               {/* Month Navigation */}
@@ -495,7 +926,8 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                 <div className="flex items-center gap-2">
                   <button
                     onClick={prevMonth}
-                    className="p-1.5 text-gray-500 hover:text-[#6556d2] hover:bg-[#6556d2]/10 rounded-md transition-colors cursor-pointer"
+                    disabled={!canPrev}
+                    className="p-1.5 text-gray-500 hover:text-[#6556d2] hover:bg-[#6556d2]/10 rounded-md transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:text-gray-500 disabled:hover:bg-transparent"
                   >
                     <ChevronLeftIcon />
                   </button>
@@ -504,7 +936,8 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                   </h4>
                   <button
                     onClick={nextMonth}
-                    className="p-1.5 text-gray-500 hover:text-[#6556d2] hover:bg-[#6556d2]/10 rounded-md transition-colors cursor-pointer"
+                    disabled={!canNext}
+                    className="p-1.5 text-gray-500 hover:text-[#6556d2] hover:bg-[#6556d2]/10 rounded-md transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:text-gray-500 disabled:hover:bg-transparent"
                   >
                     <ChevronRightIcon />
                   </button>
@@ -516,19 +949,104 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                   >
                     Today
                   </button>
-                  {/* Non-clickable upcoming deadlines counter badge */}
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-[#6556d2] bg-[#6556d2]/8 border border-[#6556d2]/20 rounded-md select-none">
-                    Upcoming Deadlines:
-                    <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 text-[10px] font-bold text-white bg-[#6556d2] rounded-full">
-                      {upcomingCount}
-                    </span>
-                  </span>
+                  {/* Upcoming Deadlines — Interactive dropdown */}
+                  <div className="relative">
+                    <button
+                      ref={upcomingBadgeRef}
+                      onClick={handleUpcomingClick}
+                      disabled={isLoading || upcomingDeadlinesList.length === 0}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
+                        upcomingDeadlinesList.length > 0 && !isLoading
+                          ? "text-[#6556d2] bg-[#6556d2]/8 border border-[#6556d2]/20 hover:bg-[#6556d2]/15 cursor-pointer"
+                          : "text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed"
+                      }`}
+                    >
+                      Upcoming Deadlines:
+                      <span className={`inline-flex items-center justify-center h-4 min-w-[16px] px-1 text-[10px] font-bold rounded-full ${
+                        upcomingDeadlinesList.length > 0 && !isLoading
+                          ? "text-white bg-[#6556d2]"
+                          : "text-gray-400 bg-gray-200"
+                      }`}>
+                        {isLoading ? "…" : upcomingDeadlinesList.length}
+                      </span>
+                      {upcomingDeadlinesList.length > 1 && (
+                        <svg className={`h-3 w-3 transition-transform ${upcomingDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      )}
+                    </button>
+
+                    {/* Dropdown list */}
+                    {upcomingDropdownOpen && (
+                      <div
+                        ref={upcomingDropdownRef}
+                        className="absolute right-0 top-full mt-2 w-[340px] max-h-[280px] overflow-auto bg-white rounded-xl shadow-2xl border border-gray-200 z-[70]"
+                        style={{ animation: "fadeIn 150ms ease-out" }}
+                      >
+                        <div className="px-3.5 py-2.5 border-b border-gray-100 bg-gray-50/70 rounded-t-xl">
+                          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Jump to deadline</p>
+                        </div>
+                        <div className="py-1">
+                          {upcomingDeadlinesList.map((ev, i) => {
+                            const urgency = getUrgency(ev.date);
+                            const daysLeft = getDaysRemaining(ev.date);
+                            return (
+                              <button
+                                key={`${ev.milestone.id}-${ev.dateKey}-${i}`}
+                                onClick={() => jumpToDeadline(ev)}
+                                className="w-full text-left px-3.5 py-2.5 flex items-center gap-3 hover:bg-[#6556d2]/5 transition-colors cursor-pointer group"
+                              >
+                                <span className={`flex-shrink-0 h-2.5 w-2.5 rounded-full ${urgencyDotColor(urgency)}`} />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[12px] font-semibold text-gray-800 truncate group-hover:text-[#6556d2] transition-colors">
+                                    {ev.milestone.file_name}
+                                  </p>
+                                  <p className="text-[10px] text-gray-400 mt-0.5 truncate">{ev.deadline.description || "No description"}</p>
+                                </div>
+                                <div className="flex-shrink-0 text-right">
+                                  <span className={`inline-block text-[11px] font-bold ${urgencyTextColor(urgency)}`}>
+                                    {ev.deadline.date_raw || ev.dateKey}
+                                  </span>
+                                  <p className={`text-[9px] font-semibold mt-0.5 ${urgencyTextColor(urgency)}`}>
+                                    {daysLeft === 0 ? "Today" : `${daysLeft}d`}
+                                  </p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
               {/* Calendar Grid */}
               <div className="overflow-auto flex-1 p-4">
-                {allEvents.length === 0 ? (
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-24 gap-2">
+                    <svg className="h-6 w-6 animate-spin text-[#6556d2]" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    <span className="text-sm text-gray-400">Loading deadlines…</span>
+                  </div>
+                ) : fetchError ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-xs text-amber-700">
+                      <svg className="h-4 w-4 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {fetchError}
+                    </div>
+                    <button
+                      onClick={() => persistedRange && fetchDeadlines(persistedRange.start, persistedRange.end)}
+                      className="px-3 py-1.5 text-xs font-medium text-[#6556d2] border border-[#6556d2]/30 rounded-md hover:bg-[#6556d2]/5 transition-colors cursor-pointer"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : rangeFilteredEvents.length === 0 && apiEvents.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 gap-3">
                     <svg className="h-12 w-12 text-gray-300" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                       <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -536,11 +1054,19 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                       <line x1="8" y1="2" x2="8" y2="6" />
                       <line x1="3" y1="10" x2="21" y2="10" />
                     </svg>
-                    <p className="text-sm text-gray-400">No deadlines found in any documents.</p>
-                    <p className="text-xs text-gray-400">Deadlines will appear here once documents with deadline data are uploaded.</p>
+                    <p className="text-sm text-gray-400">No deadlines found in this date range.</p>
+                    <p className="text-xs text-gray-400">Try selecting a different timeframe or upload documents with deadline data.</p>
                   </div>
                 ) : (
                   <>
+                    {/* Highlight pulse animation */}
+                    <style>{`
+                      @keyframes highlightPulse {
+                        0%, 100% { box-shadow: inset 0 0 0 2px rgba(245, 158, 11, 0.6); }
+                        50% { box-shadow: inset 0 0 0 3px rgba(245, 158, 11, 1), 0 0 12px rgba(245, 158, 11, 0.3); }
+                      }
+                      .calendar-highlight-pulse { animation: highlightPulse 0.6s ease-in-out 3; }
+                    `}</style>
                     {/* Day headers */}
                     <div className="grid grid-cols-7 gap-px mb-1">
                       {DAY_HEADERS.map((d) => (
@@ -560,6 +1086,29 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                           return <div key={idx} className="bg-gray-50/80 min-h-[90px]" />;
                         }
 
+                        // Check if day is outside the selected range
+                        const isOutOfRange = (() => {
+                          if (!persistedRange) return false;
+                          const cellDate = new Date(cell.dateKey + "T00:00:00");
+                          const rangeStart = new Date(persistedRange.start + "T00:00:00");
+                          const rangeEnd = new Date(persistedRange.end + "T00:00:00");
+                          return cellDate < rangeStart || cellDate > rangeEnd;
+                        })();
+
+                        if (isOutOfRange) {
+                          return (
+                            <div
+                              key={idx}
+                              className="min-h-[90px] p-1.5 bg-gray-200 pointer-events-none select-none relative"
+                            >
+                              <div className="absolute inset-0 bg-gray-900/10" />
+                              <span className="text-xs font-medium text-gray-500 opacity-40 leading-none relative">
+                                {cell.day}
+                              </span>
+                            </div>
+                          );
+                        }
+
                         const files = uniqueFilesForDay(cell.events);
                         const isOverdue = hasOverdueInDay(cell.events);
                         const maxVisible = 2;
@@ -574,12 +1123,15 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                               , files[0].maxUrgency)
                             : null;
 
+                        const isHighlighted = highlightedDay === cell.dateKey;
+
                         return (
                           <div
                             key={idx}
-                            className={`min-h-[90px] p-1.5 relative transition-colors ${
+                            className={`min-h-[90px] p-1.5 relative transition-all duration-300 ${
                               cell.isToday ? "ring-2 ring-[#6556d2] ring-inset" : ""
-                            } ${topUrgency ? urgencyBgTint(topUrgency) : "bg-white"}`}
+                            } ${isHighlighted ? "ring-2 ring-inset ring-amber-400 bg-amber-50/50 calendar-highlight-pulse" : ""}
+                            ${!isHighlighted && topUrgency ? urgencyBgTint(topUrgency) : !isHighlighted ? "bg-white" : ""}`}
                           >
                             {/* Day number */}
                             <div className="flex items-center justify-between mb-1">
@@ -646,7 +1198,7 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block h-2.5 w-2.5 rounded-sm bg-blue-500" />
-                        <span className="text-[10px] text-gray-600 font-medium">Future Reminder <span className="text-gray-400">(&gt; 30 days)</span></span>
+                        <span className="text-[10px] text-gray-600 font-medium">Future Reminder <span className="text-gray-400">(&gt; 10 days)</span></span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block h-2.5 w-2.5 rounded-sm bg-gray-400" />

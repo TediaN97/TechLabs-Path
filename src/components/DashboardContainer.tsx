@@ -4,7 +4,7 @@ import type { Trigger, ExportFile, Milestone } from "../hooks/useAgent";
 import ChatInterface from "./ChatInterface";
 import StructuralDataLookup from "./StructuralDataLookup";
 import DeadlineCalendar from "./DeadlineCalendar";
-import type { CalendarActionType } from "./DeadlineCalendar";
+import type { CalendarActionType, CalendarRange } from "./DeadlineCalendar";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 
@@ -437,6 +437,27 @@ export default function DashboardContainer() {
   const agent = useAgent();
   const isLoading = agent.isProcessing || agent.isExporting || agent.isUploading;
 
+  // ── Persisted calendar range ─────────────────────────────────────────────
+  const [persistedRange, setPersistedRange] = useState<CalendarRange | null>(null);
+
+  /** Convert Date objects from the timeframe selection to ISO strings, or clear the range */
+  const handleRangeChange = useCallback(
+    (range: { start: Date | null; end: Date | null }) => {
+      if (!range.start || !range.end) {
+        setPersistedRange(null);
+        return;
+      }
+      const toISO = (d: Date) => {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+      };
+      setPersistedRange({ start: toISO(range.start), end: toISO(range.end) });
+    },
+    []
+  );
+
   // ── Calendar → StructuralDataLookup modal bridge ──────────────────────────
   const [calendarAction, setCalendarAction] = useState<{
     type: CalendarActionType;
@@ -472,6 +493,8 @@ export default function DashboardContainer() {
             <DeadlineCalendar
               data={agent.data}
               onAction={handleCalendarAction}
+              persistedRange={persistedRange}
+              onRangeChange={handleRangeChange}
             />
             <div className="h-8 w-8 rounded-full bg-[#6556d2] flex items-center justify-center text-white text-xs font-bold">
               TL
@@ -499,8 +522,9 @@ export default function DashboardContainer() {
               isRefreshing={agent.isRefreshing}
               lastRefreshed={agent.lastRefreshed}
               fetchError={agent.fetchError}
-              detailMilestone={agent.detailMilestone}
-              onDetailStruct={agent.setDetailMilestone}
+              // detailMilestone={agent.detailMilestone}
+              // onDetailStruct={agent.setDetailMilestone}
+              // onClearDetailAction={handleClearDetailAction}
               onDelete={agent.deleteMilestone}
               isUploading={agent.isUploading}
               uploadingFileName={agent.uploadingFileName}
