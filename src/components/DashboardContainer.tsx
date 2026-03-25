@@ -522,7 +522,9 @@ export default function DashboardContainer() {
               isRefreshing={agent.isRefreshing}
               lastRefreshed={agent.lastRefreshed}
               fetchError={agent.fetchError}
-              onDetailStruct={agent.setDetailMilestone}
+              // detailMilestone={agent.detailMilestone}
+              // onDetailStruct={agent.setDetailMilestone}
+              // onClearDetailAction={handleClearDetailAction}
               onDelete={agent.deleteMilestone}
               isUploading={agent.isUploading}
               uploadingFileName={agent.uploadingFileName}

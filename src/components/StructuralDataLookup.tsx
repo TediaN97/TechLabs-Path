@@ -1412,7 +1412,7 @@ function Toast({ message, type, onDismiss }: { message: string; type: "success" 
 
 const RECORDS_PER_PAGE = 10;
 
-type DetailAction = "info" | "importantInfo" | "deadlines" | null;
+// type DetailAction = "info" | "importantInfo" | "deadlines" | null;
 
 interface StructuralDataLookupProps {
   data: Milestone[];
@@ -1420,9 +1420,9 @@ interface StructuralDataLookupProps {
   isRefreshing: boolean;
   lastRefreshed: string;
   fetchError: string | null;
-  detailMilestone: Milestone | null;
-  detailAction: DetailAction;
-  onDetailStruct: (m: Milestone | null) => void;
+  // detailMilestone: Milestone | null;
+  // detailAction: DetailAction;
+  // onDetailStruct: (m: Milestone | null) => void;
   onDelete: (id: string) => Promise<DeleteFileResult>;
   isUploading?: boolean;
   uploadingFileName?: string;
@@ -1438,9 +1438,8 @@ export default function StructuralDataLookup({
   isRefreshing,
   lastRefreshed,
   fetchError,
-  detailMilestone,
-  detailAction,
-  onClearDetailAction,
+  // detailAction,
+  // onClearDetailAction,
   onDelete,
   isUploading = false,
   uploadingFileName = "",

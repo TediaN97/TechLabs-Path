@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { Milestone, DeadlineEntry } from "../hooks/useAgent";
 
@@ -523,6 +523,7 @@ export default function DeadlineCalendar({ data, onAction, persistedRange, onRan
               section_title: item.section_title,
               section_index: 0,
             }],
+            borrower: "",
           };
 
           // Build a DeadlineEntry for this specific item
@@ -641,27 +642,76 @@ export default function DeadlineCalendar({ data, onAction, persistedRange, onRan
 
   const eventsByDate = useMemo(() => groupByDate(rangeFilteredEvents), [rangeFilteredEvents]);
 
-  // Badge count: upcoming deadlines (today + future) — scoped to range
-  const upcomingCount = useMemo(() => {
+  // ── Upcoming Deadlines dropdown ────────────────────────────────────────
+  const [upcomingDropdownOpen, setUpcomingDropdownOpen] = useState(false);
+  const [highlightedDay, setHighlightedDay] = useState<string | null>(null);
+  const upcomingBadgeRef = useRef<HTMLButtonElement>(null);
+  const upcomingDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Sorted list of upcoming (non-overdue) deadlines within the range
+  const upcomingDeadlinesList = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const unique = new Set<string>();
-    for (const ev of rangeFilteredEvents) {
-      if (ev.date >= today) unique.add(ev.dateKey + "|" + (ev.milestone.document_id || ev.milestone.id));
-    }
-    return unique.size;
+    return rangeFilteredEvents
+      .filter((ev) => ev.date >= today)
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
   }, [rangeFilteredEvents]);
 
-  // Overdue count — scoped to range
-  const overdueCount = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const unique = new Set<string>();
-    for (const ev of rangeFilteredEvents) {
-      if (ev.date < today) unique.add(ev.dateKey + "|" + (ev.milestone.document_id || ev.milestone.id));
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!upcomingDropdownOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (
+        upcomingDropdownRef.current && !upcomingDropdownRef.current.contains(e.target as Node) &&
+        upcomingBadgeRef.current && !upcomingBadgeRef.current.contains(e.target as Node)
+      ) {
+        setUpcomingDropdownOpen(false);
+      }
     }
-    return unique.size;
-  }, [rangeFilteredEvents]);
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [upcomingDropdownOpen]);
+
+  // Clear highlight animation after 2 seconds
+  useEffect(() => {
+    if (!highlightedDay) return;
+    const timer = setTimeout(() => setHighlightedDay(null), 2000);
+    return () => clearTimeout(timer);
+  }, [highlightedDay]);
+
+  // Jump to a specific deadline's date on the calendar
+  const jumpToDeadline = useCallback((ev: CalendarEvent) => {
+    const targetYear = ev.date.getFullYear();
+    const targetMonth = ev.date.getMonth();
+    // Navigate to the month if needed
+    if (targetYear !== selectedMonth.year || targetMonth !== selectedMonth.month) {
+      setSelectedMonth({ year: targetYear, month: targetMonth });
+    }
+    // Highlight the day cell
+    setHighlightedDay(ev.dateKey);
+    // Auto-open detail modal for this entry after a brief delay
+    setTimeout(() => {
+      const eventsForFile = (eventsByDate[ev.dateKey] || rangeFilteredEvents.filter(e => e.dateKey === ev.dateKey))
+        .filter(e => (e.milestone.document_id || e.milestone.id) === (ev.milestone.document_id || ev.milestone.id));
+      setSelectedEvent({
+        milestone: ev.milestone,
+        dateKey: ev.dateKey,
+        events: eventsForFile.length > 0 ? eventsForFile : [ev],
+      });
+    }, 350);
+    setUpcomingDropdownOpen(false);
+  }, [selectedMonth, eventsByDate, rangeFilteredEvents]);
+
+  // Badge click handler
+  const handleUpcomingClick = useCallback(() => {
+    if (upcomingDeadlinesList.length === 0) return;
+    if (upcomingDeadlinesList.length === 1) {
+      // Single deadline — jump directly
+      jumpToDeadline(upcomingDeadlinesList[0]);
+    } else {
+      setUpcomingDropdownOpen((v) => !v);
+    }
+  }, [upcomingDeadlinesList, jumpToDeadline]);
 
   // ── Month navigation with range constraints ─────────────────────────────
   const { canPrev, canNext } = useMemo(() => {
@@ -726,13 +776,14 @@ export default function DeadlineCalendar({ data, onAction, persistedRange, onRan
     if (!isOpen) return;
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        if (upcomingDropdownOpen) { setUpcomingDropdownOpen(false); return; }
         if (selectedEvent) setSelectedEvent(null);
         else setIsOpen(false);
       }
     }
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [isOpen, selectedEvent]);
+  }, [isOpen, selectedEvent, upcomingDropdownOpen]);
 
   // ── Grid computation ──────────────────────────────────────────────────────
   const { year, month } = selectedMonth;
@@ -898,13 +949,75 @@ export default function DeadlineCalendar({ data, onAction, persistedRange, onRan
                   >
                     Today
                   </button>
-                  {/* Non-clickable upcoming deadlines counter badge */}
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-[#6556d2] bg-[#6556d2]/8 border border-[#6556d2]/20 rounded-md select-none">
-                    Upcoming Deadlines:
-                    <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 text-[10px] font-bold text-white bg-[#6556d2] rounded-full">
-                      {upcomingCount}
-                    </span>
-                  </span>
+                  {/* Upcoming Deadlines — Interactive dropdown */}
+                  <div className="relative">
+                    <button
+                      ref={upcomingBadgeRef}
+                      onClick={handleUpcomingClick}
+                      disabled={isLoading || upcomingDeadlinesList.length === 0}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
+                        upcomingDeadlinesList.length > 0 && !isLoading
+                          ? "text-[#6556d2] bg-[#6556d2]/8 border border-[#6556d2]/20 hover:bg-[#6556d2]/15 cursor-pointer"
+                          : "text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed"
+                      }`}
+                    >
+                      Upcoming Deadlines:
+                      <span className={`inline-flex items-center justify-center h-4 min-w-[16px] px-1 text-[10px] font-bold rounded-full ${
+                        upcomingDeadlinesList.length > 0 && !isLoading
+                          ? "text-white bg-[#6556d2]"
+                          : "text-gray-400 bg-gray-200"
+                      }`}>
+                        {isLoading ? "…" : upcomingDeadlinesList.length}
+                      </span>
+                      {upcomingDeadlinesList.length > 1 && (
+                        <svg className={`h-3 w-3 transition-transform ${upcomingDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      )}
+                    </button>
+
+                    {/* Dropdown list */}
+                    {upcomingDropdownOpen && (
+                      <div
+                        ref={upcomingDropdownRef}
+                        className="absolute right-0 top-full mt-2 w-[340px] max-h-[280px] overflow-auto bg-white rounded-xl shadow-2xl border border-gray-200 z-[70]"
+                        style={{ animation: "fadeIn 150ms ease-out" }}
+                      >
+                        <div className="px-3.5 py-2.5 border-b border-gray-100 bg-gray-50/70 rounded-t-xl">
+                          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Jump to deadline</p>
+                        </div>
+                        <div className="py-1">
+                          {upcomingDeadlinesList.map((ev, i) => {
+                            const urgency = getUrgency(ev.date);
+                            const daysLeft = getDaysRemaining(ev.date);
+                            return (
+                              <button
+                                key={`${ev.milestone.id}-${ev.dateKey}-${i}`}
+                                onClick={() => jumpToDeadline(ev)}
+                                className="w-full text-left px-3.5 py-2.5 flex items-center gap-3 hover:bg-[#6556d2]/5 transition-colors cursor-pointer group"
+                              >
+                                <span className={`flex-shrink-0 h-2.5 w-2.5 rounded-full ${urgencyDotColor(urgency)}`} />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[12px] font-semibold text-gray-800 truncate group-hover:text-[#6556d2] transition-colors">
+                                    {ev.milestone.file_name}
+                                  </p>
+                                  <p className="text-[10px] text-gray-400 mt-0.5 truncate">{ev.deadline.description || "No description"}</p>
+                                </div>
+                                <div className="flex-shrink-0 text-right">
+                                  <span className={`inline-block text-[11px] font-bold ${urgencyTextColor(urgency)}`}>
+                                    {ev.deadline.date_raw || ev.dateKey}
+                                  </span>
+                                  <p className={`text-[9px] font-semibold mt-0.5 ${urgencyTextColor(urgency)}`}>
+                                    {daysLeft === 0 ? "Today" : `${daysLeft}d`}
+                                  </p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -946,6 +1059,14 @@ export default function DeadlineCalendar({ data, onAction, persistedRange, onRan
                   </div>
                 ) : (
                   <>
+                    {/* Highlight pulse animation */}
+                    <style>{`
+                      @keyframes highlightPulse {
+                        0%, 100% { box-shadow: inset 0 0 0 2px rgba(245, 158, 11, 0.6); }
+                        50% { box-shadow: inset 0 0 0 3px rgba(245, 158, 11, 1), 0 0 12px rgba(245, 158, 11, 0.3); }
+                      }
+                      .calendar-highlight-pulse { animation: highlightPulse 0.6s ease-in-out 3; }
+                    `}</style>
                     {/* Day headers */}
                     <div className="grid grid-cols-7 gap-px mb-1">
                       {DAY_HEADERS.map((d) => (
@@ -1002,12 +1123,15 @@ export default function DeadlineCalendar({ data, onAction, persistedRange, onRan
                               , files[0].maxUrgency)
                             : null;
 
+                        const isHighlighted = highlightedDay === cell.dateKey;
+
                         return (
                           <div
                             key={idx}
-                            className={`min-h-[90px] p-1.5 relative transition-colors ${
+                            className={`min-h-[90px] p-1.5 relative transition-all duration-300 ${
                               cell.isToday ? "ring-2 ring-[#6556d2] ring-inset" : ""
-                            } ${topUrgency ? urgencyBgTint(topUrgency) : "bg-white"}`}
+                            } ${isHighlighted ? "ring-2 ring-inset ring-amber-400 bg-amber-50/50 calendar-highlight-pulse" : ""}
+                            ${!isHighlighted && topUrgency ? urgencyBgTint(topUrgency) : !isHighlighted ? "bg-white" : ""}`}
                           >
                             {/* Day number */}
                             <div className="flex items-center justify-between mb-1">
