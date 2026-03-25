@@ -1,6 +1,7 @@
 import { Fragment, useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import type { Milestone, DeadlineEntry } from "../hooks/useAgent";
+import type { Milestone, DeadlineEntry, DeleteFileResult } from "../hooks/useAgent";
+import type { CalendarActionType } from "./DeadlineCalendar";
 
 type SortKey = "file_name" | "upload_time" | "lender" | "borrower";
 type SortDirection = "asc" | "desc";
@@ -765,24 +766,65 @@ function StructureDetailModal({
   );
 }
 
-// ── Vectorized Deadlines Table Modal ──────────────────────────────────────────
+// ── Vectorized Deadlines – urgency helpers (self-contained) ──────────────────
 
-function urgencyBadgeClass(urgency?: string): string {
-  switch (urgency) {
-    case "high": return "bg-red-100 text-red-700 border-red-200";
-    case "medium": return "bg-amber-100 text-amber-700 border-amber-200";
-    case "low": return "bg-green-100 text-green-700 border-green-200";
-    default: return "bg-gray-100 text-gray-600 border-gray-200";
+type VDUrgency = "critical" | "standard" | "future" | "past";
+
+function vdGetUrgency(dateRaw: string): VDUrgency {
+  if (!dateRaw || dateRaw === "—" || dateRaw === "-") return "future";
+  // Attempt to parse the date using common formats
+  let parsed: Date | null = null;
+  if (dateRaw.includes("T")) {
+    const d = new Date(dateRaw);
+    if (!isNaN(d.getTime())) parsed = d;
+  }
+  if (!parsed && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
+    const d = new Date(dateRaw + "T00:00:00");
+    if (!isNaN(d.getTime())) parsed = d;
+  }
+  if (!parsed) {
+    const dotParts = dateRaw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    if (dotParts) {
+      const d = new Date(+dotParts[3], +dotParts[2] - 1, +dotParts[1]);
+      if (!isNaN(d.getTime())) parsed = d;
+    }
+  }
+  if (!parsed) {
+    const d = new Date(dateRaw);
+    if (!isNaN(d.getTime())) parsed = d;
+  }
+  if (!parsed) return "future";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(parsed);
+  target.setHours(0, 0, 0, 0);
+  const daysRemaining = Math.floor((target.getTime() - today.getTime()) / 86400000);
+  if (daysRemaining < 0) return "past";
+  if (daysRemaining < 2) return "critical";
+  if (daysRemaining <= 10) return "standard";
+  return "future";
+}
+
+function vdBadgeClasses(u: VDUrgency): string {
+  switch (u) {
+    case "critical": return "bg-red-100 text-red-700 border-red-200";
+    case "standard": return "bg-amber-100 text-amber-700 border-amber-200";
+    case "future":   return "bg-blue-100 text-blue-700 border-blue-200";
+    case "past":     return "bg-gray-100 text-gray-500 border-gray-200";
   }
 }
 
-function statusBadgeClass(status?: string): string {
-  const s = (status || "").toLowerCase();
-  if (s === "overdue") return "bg-red-100 text-red-700";
-  if (s === "completed" || s === "done") return "bg-green-100 text-green-700";
-  if (s === "upcoming" || s === "active") return "bg-[#6556d2]/10 text-[#6556d2]";
-  return "bg-gray-100 text-gray-600";
+function vdBadgeLabel(u: VDUrgency): string {
+  switch (u) {
+    case "critical": return "Critical";
+    case "standard": return "Standard";
+    case "future":   return "Future";
+    case "past":     return "Past";
+  }
 }
+
+// ── Vectorized Deadlines Table Modal ──────────────────────────────────────────
 
 function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClose: () => void }) {
   const deadlines: DeadlineEntry[] = milestone.deadlines ?? [];
@@ -837,100 +879,67 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
         ) : (
           <div className="overflow-auto flex-1">
             <table className="w-full text-sm">
-              <thead className="top-0 z-10">
+              <thead className="sticky top-0 z-10">
                 <tr className="bg-[#6556d2]/5 border-b border-[#6556d2]/20">
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider">
                     Description
                   </th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
                     Deadline
                   </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
-                    Type
-                  </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
-                    Status
+                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
+                    Urgency
                   </th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
                     Section
+                  </th>
+                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-[#6556d2] uppercase tracking-wider whitespace-nowrap">
+                    Page
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {deadlines.map((dl, idx) => {
-                  const isExplicit = dl.deadline_type === "explicit_date";
-                  const isSemantic = dl.deadline_type === "semantic_deadline";
-                  const rowOverdue = (dl.status_category || "").toLowerCase() === "overdue" || (dl.days_remaining != null && dl.days_remaining < 0);
-
+                  const urgency = vdGetUrgency(dl.date_raw);
                   return (
-                    <tr key={idx} className={`hover:bg-gray-50/60 transition-colors ${rowOverdue ? "bg-red-50/50" : ""}`}>
-                      <td className="px-4 py-3 text-gray-700 text-xs leading-relaxed max-w-[280px]">
-                        <div className="flex items-start gap-2">
-                          {dl.urgency && (
-                            <span className={`mt-0.5 flex-shrink-0 inline-block h-2 w-2 rounded-full ${
-                              dl.urgency === "high" ? "bg-red-500" : dl.urgency === "medium" ? "bg-amber-500" : "bg-green-500"
-                            }`} title={`${dl.urgency} urgency`} />
-                          )}
-                          <span>{dl.description || "—"}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-xs whitespace-nowrap">
-                        {isExplicit && dl.date_parsed ? (
-                          <div>
-                            <span className="text-gray-700 font-medium">{dl.date_parsed}</span>
-                            {dl.days_remaining != null && (
-                              <span className={`ml-1.5 text-[10px] font-medium ${
-                                dl.days_remaining < 0 ? "text-red-600" : dl.days_remaining <= 30 ? "text-amber-600" : "text-green-600"
-                              }`}>
-                                ({dl.days_remaining < 0 ? `${Math.abs(dl.days_remaining)}d overdue` : `${dl.days_remaining}d left`})
-                              </span>
-                            )}
-                          </div>
-                        ) : isSemantic && dl.resolution_hint ? (
-                          <div>
-                            <span className="text-gray-600 italic">{dl.resolution_hint.human_rule || dl.date_raw || "—"}</span>
-                            {dl.resolution_hint.frequency && (
-                              <span className="ml-1.5 text-[10px] text-gray-400">({dl.resolution_hint.frequency})</span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-gray-600">{dl.date_raw || "—"}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs">
-                        {dl.deadline_type ? (
-                          <span className={`inline-flex px-2 py-0.5 text-[10px] font-medium rounded-full border ${
-                            isExplicit ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-purple-50 text-purple-700 border-purple-200"
-                          }`}>
-                            {isExplicit ? "Explicit" : "Semantic"}
+                    <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
+                      {/* Description + inline urgency dot — flex row for alignment */}
+                      <td className="px-4 py-3">
+                        <div className="flex flex-row items-center gap-2">
+                          <span
+                            className={`inline-block h-2 w-2 rounded-full flex-shrink-0 ${
+                              urgency === "critical" ? "bg-red-500"
+                              : urgency === "standard" ? "bg-amber-400"
+                              : urgency === "future" ? "bg-blue-500"
+                              : "bg-gray-400"
+                            }`}
+                          />
+                          <span className="text-gray-700 text-xs leading-relaxed">
+                            {dl.description || "—"}
                           </span>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs">
-                        {dl.status_category ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className={`inline-flex px-2 py-0.5 text-[10px] font-semibold rounded-full ${statusBadgeClass(dl.status_category)}`}>
-                              {dl.status_category}
-                            </span>
-                            {dl.urgency && (
-                              <span className={`inline-flex px-1.5 py-0.5 text-[9px] font-semibold rounded-full border ${urgencyBadgeClass(dl.urgency)}`}>
-                                {dl.urgency}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">
-                        <div>
-                          {dl.section_title || "—"}
-                          {dl.section_index != null && (
-                            <span className="ml-1 text-gray-400">p.{dl.section_index}</span>
-                          )}
                         </div>
+                      </td>
+                      {/* Deadline date */}
+                      <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                        {dl.date_raw || "—"}
+                      </td>
+                      {/* Urgency badge — centred, perfectly inline */}
+                      <td className="px-4 py-3">
+                        <div className="flex flex-row items-center justify-center">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-full border ${vdBadgeClasses(urgency)}`}
+                          >
+                            {vdBadgeLabel(urgency)}
+                          </span>
+                        </div>
+                      </td>
+                      {/* Section */}
+                      <td className="px-4 py-3 text-gray-600 text-xs">
+                        {dl.section_title || "—"}
+                      </td>
+                      {/* Page */}
+                      <td className="px-4 py-3 text-gray-600 text-xs text-center">
+                        {dl.section_index != null ? String(dl.section_index) : "—"}
                       </td>
                     </tr>
                   );
@@ -1295,6 +1304,110 @@ function ImportantInfoModal({
   );
 }
 
+// ── Delete Confirmation Modal ────────────────────────────────────────────────
+
+function DeleteConfirmModal({
+  fileName,
+  isDeleting,
+  onConfirm,
+  onCancel,
+}: {
+  fileName: string;
+  isDeleting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !isDeleting) onCancel();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onCancel, isDeleting]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={isDeleting ? undefined : onCancel}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex-shrink-0 h-9 w-9 rounded-full bg-red-50 flex items-center justify-center">
+              <svg className="h-5 w-5 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800">Delete file</h3>
+              <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[250px]" title={fileName}>{fileName}</p>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Are you sure you want to delete this file and all its analyzed data? This action cannot be undone.
+          </p>
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="px-3 py-1.5 text-xs font-medium text-white bg-red-500 rounded-md hover:bg-red-600 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {isDeleting && (
+              <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            )}
+            {isDeleting ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Toast notification ──────────────────────────────────────────────────────
+
+function Toast({ message, type, onDismiss }: { message: string; type: "success" | "error"; onDismiss: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onDismiss, 5000);
+    return () => clearTimeout(timer);
+  }, [onDismiss]);
+
+  return createPortal(
+    <div className="fixed top-4 right-4 z-[9999] animate-[fadeIn_200ms_ease-out]">
+      <div
+        className={`flex items-start gap-2 px-4 py-3 rounded-lg shadow-lg border max-w-sm ${
+          type === "success"
+            ? "bg-white border-emerald-200 text-gray-700"
+            : "bg-white border-red-200 text-gray-700"
+        }`}
+      >
+        {type === "success" ? (
+          <svg className="h-5 w-5 text-emerald-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        ) : (
+          <svg className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        )}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm leading-relaxed">{message}</p>
+        </div>
+        <button onClick={onDismiss} className="text-gray-400 hover:text-gray-600 text-sm leading-none cursor-pointer flex-shrink-0">&times;</button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 const RECORDS_PER_PAGE = 10;
@@ -1310,10 +1423,13 @@ interface StructuralDataLookupProps {
   detailMilestone: Milestone | null;
   detailAction: DetailAction;
   onDetailStruct: (m: Milestone | null) => void;
-  onClearDetailAction: () => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<DeleteFileResult>;
   isUploading?: boolean;
   uploadingFileName?: string;
+  /** External modal trigger from the Deadline Calendar */
+  calendarAction?: { type: CalendarActionType; milestone: Milestone } | null;
+  /** Callback to acknowledge that the external action has been handled */
+  onCalendarActionHandled?: () => void;
 }
 
 export default function StructuralDataLookup({
@@ -1328,12 +1444,41 @@ export default function StructuralDataLookup({
   onDelete,
   isUploading = false,
   uploadingFileName = "",
+  calendarAction = null,
+  onCalendarActionHandled,
 }: StructuralDataLookupProps) {
   const [filterText, setFilterText] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [vectorMilestone, setVectorMilestone] = useState<Milestone | null>(null);
   const [aiMilestone, setAiMilestone] = useState<Milestone | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "upload_time", direction: "desc" });
+
+  // Delete flow state
+  const [deleteTarget, setDeleteTarget] = useState<Milestone | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTarget) return;
+    const docId = deleteTarget.document_id || deleteTarget.id;
+    setIsDeleting(true);
+    setDeletingId(docId);
+    try {
+      const result = await onDelete(docId);
+      if (result.success) {
+        setToast({ message: result.message, type: "success" });
+      } else {
+        setToast({ message: `Failed to delete the file. ${result.message}`, type: "error" });
+      }
+    } catch {
+      setToast({ message: "Failed to delete the file. Please try again.", type: "error" });
+    } finally {
+      setIsDeleting(false);
+      setDeletingId(null);
+      setDeleteTarget(null);
+    }
+  }, [deleteTarget, onDelete]);
 
   // Structure Detail modal state
   const [structDetailMilestone, setStructDetailMilestone] = useState<Milestone | null>(null);
@@ -1423,26 +1568,26 @@ export default function StructuralDataLookup({
     }
   }, []);
 
-  // ── Bridge: Calendar / external → open the right modal ──
+  // ── External calendar action bridge ───────────────────────────────────────
   useEffect(() => {
-    if (!detailMilestone || !detailAction) return;
-    // Small delay to allow the Calendar portal to unmount first (prevents z-index flicker)
-    const timer = setTimeout(() => {
-      switch (detailAction) {
-        case "info":
-          handleDetail(detailMilestone);
-          break;
-        case "importantInfo":
-          handleImportantInfo(detailMilestone);
-          break;
-        case "deadlines":
-          handleAiAnalyzed(detailMilestone);
-          break;
-      }
-      onClearDetailAction();
-    }, 120);
-    return () => clearTimeout(timer);
-  }, [detailMilestone, detailAction, handleDetail, handleImportantInfo, handleAiAnalyzed, onClearDetailAction]);
+    if (!calendarAction) return;
+    const { type, milestone } = calendarAction;
+    switch (type) {
+      case "detail":
+        handleDetail(milestone);
+        break;
+      case "importantInfo":
+        handleImportantInfo(milestone);
+        break;
+      case "aiDeadlines":
+        handleAiAnalyzed(milestone);
+        break;
+      case "vectorDeadlines":
+        setVectorMilestone(milestone);
+        break;
+    }
+    onCalendarActionHandled?.();
+  }, [calendarAction, handleDetail, handleImportantInfo, handleAiAnalyzed, onCalendarActionHandled]);
 
   const handleSort = useCallback((key: SortKey) => {
     setSortConfig((prev) =>
@@ -1678,11 +1823,19 @@ export default function StructuralDataLookup({
                           </button>
                           {/* 4. Delete Icon */}
                           <button
-                            onClick={() => onDelete(entry.document_id || entry.id)}
+                            onClick={() => setDeleteTarget(entry)}
+                            disabled={deletingId === (entry.document_id || entry.id)}
                             title="Delete"
-                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <Trash2Icon />
+                            {deletingId === (entry.document_id || entry.id) ? (
+                              <svg className="h-4 w-4 animate-spin text-[#6556d2]" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                              </svg>
+                            ) : (
+                              <Trash2Icon />
+                            )}
                           </button>
                         </div>
                       </td>
@@ -1766,6 +1919,17 @@ export default function StructuralDataLookup({
           error={importantInfoError}
           onClose={() => setImportantInfoMilestone(null)}
         />
+      )}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          fileName={deleteTarget.file_name}
+          isDeleting={isDeleting}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => { if (!isDeleting) setDeleteTarget(null); }}
+        />
+      )}
+      {toast && (
+        <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />
       )}
     </>
   );

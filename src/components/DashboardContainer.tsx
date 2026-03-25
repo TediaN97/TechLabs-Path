@@ -4,6 +4,7 @@ import type { Trigger, ExportFile, Milestone } from "../hooks/useAgent";
 import ChatInterface from "./ChatInterface";
 import StructuralDataLookup from "./StructuralDataLookup";
 import DeadlineCalendar from "./DeadlineCalendar";
+import type { CalendarActionType, CalendarRange } from "./DeadlineCalendar";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 
@@ -436,28 +437,43 @@ export default function DashboardContainer() {
   const agent = useAgent();
   const isLoading = agent.isProcessing || agent.isExporting || agent.isUploading;
 
-  // Calendar → StructuralDataLookup modal bridge
-  const [detailAction, setDetailAction] = useState<"info" | "importantInfo" | "deadlines" | null>(null);
+  // ── Persisted calendar range ─────────────────────────────────────────────
+  const [persistedRange, setPersistedRange] = useState<CalendarRange | null>(null);
 
-  const handleCalendarInfo = useCallback((m: Milestone) => {
-    agent.setDetailMilestone(m);
-    setDetailAction("info");
-  }, [agent]);
+  /** Convert Date objects from the timeframe selection to ISO strings, or clear the range */
+  const handleRangeChange = useCallback(
+    (range: { start: Date | null; end: Date | null }) => {
+      if (!range.start || !range.end) {
+        setPersistedRange(null);
+        return;
+      }
+      const toISO = (d: Date) => {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+      };
+      setPersistedRange({ start: toISO(range.start), end: toISO(range.end) });
+    },
+    []
+  );
 
-  const handleCalendarImportantInfo = useCallback((m: Milestone) => {
-    agent.setDetailMilestone(m);
-    setDetailAction("importantInfo");
-  }, [agent]);
+  // ── Calendar → StructuralDataLookup modal bridge ──────────────────────────
+  const [calendarAction, setCalendarAction] = useState<{
+    type: CalendarActionType;
+    milestone: Milestone;
+  } | null>(null);
 
-  const handleCalendarDeadlines = useCallback((m: Milestone) => {
-    agent.setDetailMilestone(m);
-    setDetailAction("deadlines");
-  }, [agent]);
+  const handleCalendarAction = useCallback(
+    (type: CalendarActionType, milestone: Milestone) => {
+      setCalendarAction({ type, milestone });
+    },
+    []
+  );
 
-  const handleClearDetailAction = useCallback(() => {
-    setDetailAction(null);
-    agent.setDetailMilestone(null);
-  }, [agent]);
+  const handleCalendarActionHandled = useCallback(() => {
+    setCalendarAction(null);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -474,12 +490,11 @@ export default function DashboardContainer() {
                 Processing…
               </span>
             )}
-            {/* Calendar icon trigger (top-right corner) */}
             <DeadlineCalendar
-              milestones={agent.data}
-              onInfo={handleCalendarInfo}
-              onImportantInfo={handleCalendarImportantInfo}
-              onDeadlines={handleCalendarDeadlines}
+              data={agent.data}
+              onAction={handleCalendarAction}
+              persistedRange={persistedRange}
+              onRangeChange={handleRangeChange}
             />
             <div className="h-8 w-8 rounded-full bg-[#6556d2] flex items-center justify-center text-white text-xs font-bold">
               TL
@@ -507,13 +522,12 @@ export default function DashboardContainer() {
               isRefreshing={agent.isRefreshing}
               lastRefreshed={agent.lastRefreshed}
               fetchError={agent.fetchError}
-              detailMilestone={agent.detailMilestone}
-              detailAction={detailAction}
               onDetailStruct={agent.setDetailMilestone}
-              onClearDetailAction={handleClearDetailAction}
               onDelete={agent.deleteMilestone}
               isUploading={agent.isUploading}
               uploadingFileName={agent.uploadingFileName}
+              calendarAction={calendarAction}
+              onCalendarActionHandled={handleCalendarActionHandled}
             />
           </div>
 
