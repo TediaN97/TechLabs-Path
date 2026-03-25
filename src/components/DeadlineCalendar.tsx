@@ -1,73 +1,15 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import type { Milestone, DeadlineEntry } from "../hooks/useAgent";
-
-// ── Types ───────────────────────────────────────────────────────────────────────
-
-interface CalendarEvent {
-  milestone: Milestone;
-  deadline: DeadlineEntry;
-  date: Date;
-  dateKey: string; // YYYY-MM-DD
-}
-
-interface DayEventsGroup {
-  [dateKey: string]: CalendarEvent[];
-}
-
-interface CalendarCell {
-  day: number | null;
-  dateKey: string;
-  isToday: boolean;
-  events: CalendarEvent[];
-}
-
-// ── Date Parsing ────────────────────────────────────────────────────────────────
-
-function parseDeadlineDate(raw: string): Date | null {
-  if (!raw || raw === "—" || raw === "-") return null;
-
-  // Skip clearly non-date strings (relative/textual deadlines)
-  if (/^within|^no later|^upon|^prior|^before|^after|^at least|^not/i.test(raw.trim())) return null;
-
-  // 1. ISO format with T separator: "2025-06-15T00:00:00"
-  if (raw.includes("T")) {
-    const d = new Date(raw);
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  // 2. ISO date-only: "2025-06-15" → add T to avoid timezone shift
-  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (isoMatch) {
-    const d = new Date(raw + "T00:00:00");
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  // 3. DD.MM.YYYY format (common in the app)
-  const dotParts = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (dotParts) {
-    const d = new Date(+dotParts[3], +dotParts[2] - 1, +dotParts[1]);
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  // 4. MM/DD/YYYY
-  const slashParts = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slashParts) {
-    const d = new Date(+slashParts[3], +slashParts[1] - 1, +slashParts[2]);
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  // 5. Natural language: "February 28, 2015", "June 15, 2025", etc.
-  //    Use Date constructor directly (do NOT append T00:00:00)
-  const d = new Date(raw);
-  if (!isNaN(d.getTime())) return d;
-
-  return null;
-}
-
-function toDateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+import type { Milestone } from "../hooks/useAgent";
+import { useCalendarTimeframe } from "../hooks/useCalendarTimeframe";
+import type {
+  CalendarDayData,
+  CalendarDeadlineItem,
+  DeadlineSeverity,
+} from "../services/calendarTimeframe";
+import CalendarToolbar from "./calendar/CalendarToolbar";
+import DeadlineModalActions from "./calendar/DeadlineModalActions";
+import DeadlineSeverityIndicator from "./calendar/DeadlineSeverityIndicator";
 
 // ── Calendar Grid Helpers ───────────────────────────────────────────────────────
 
@@ -87,124 +29,107 @@ const MONTH_NAMES = [
 
 const DAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-// ── Urgency ─────────────────────────────────────────────────────────────────────
+// ── Severity Styling ─────────────────────────────────────────────────────────
 
-type UrgencyLevel = "critical" | "standard" | "future" | "past";
-
-/** Compute days remaining (floored) from today midnight to the deadline date. */
-function getDaysRemaining(date: Date): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(date);
-  target.setHours(0, 0, 0, 0);
-  return Math.floor((target.getTime() - today.getTime()) / 86400000);
-}
-
-function getUrgency(date: Date): UrgencyLevel {
-  const daysRemaining = getDaysRemaining(date);
-  if (daysRemaining < 0) return "past";        // overdue / already passed
-  if (daysRemaining < 2) return "critical";     // < 2 days  → Red
-  if (daysRemaining <= 10) return "standard";   // 2–10 days → Yellow
-  return "future";                              // > 10 days → Blue (labelled >30 in legend)
-}
-
-function urgencyDotColor(urgency: UrgencyLevel): string {
-  switch (urgency) {
+function severityDotColor(severity: DeadlineSeverity): string {
+  switch (severity) {
     case "critical": return "bg-red-500";
-    case "standard": return "bg-amber-400";
+    case "warning":  return "bg-amber-400";
     case "future":   return "bg-blue-500";
     case "past":     return "bg-gray-400";
   }
 }
 
-function urgencyBgTint(urgency: UrgencyLevel): string {
-  switch (urgency) {
+function severityBgTint(severity: DeadlineSeverity): string {
+  switch (severity) {
     case "critical": return "bg-red-50/60";
-    case "standard": return "bg-amber-50/50";
+    case "warning":  return "bg-amber-50/50";
     case "future":   return "bg-blue-50/40";
     case "past":     return "bg-gray-50/40";
   }
 }
 
-function urgencyTextColor(urgency: UrgencyLevel): string {
-  switch (urgency) {
+function severityTextColor(severity: DeadlineSeverity): string {
+  switch (severity) {
     case "critical": return "text-red-600";
-    case "standard": return "text-amber-600";
+    case "warning":  return "text-amber-600";
     case "future":   return "text-blue-600";
     case "past":     return "text-gray-400";
   }
 }
 
-function urgencyLabel(urgency: UrgencyLevel): string {
-  switch (urgency) {
+function severityLabel(severity: DeadlineSeverity): string {
+  switch (severity) {
     case "critical": return "Critical Reminder";
-    case "standard": return "Standard Reminder";
+    case "warning":  return "Standard Reminder";
     case "future":   return "Future Reminder";
     case "past":     return "Past";
   }
 }
 
-// ── Event Building ──────────────────────────────────────────────────────────────
-
-function buildCalendarEvents(data: Milestone[]): CalendarEvent[] {
-  const events: CalendarEvent[] = [];
-  for (const m of data) {
-    if (!m.deadlines?.length) continue;
-    for (const dl of m.deadlines) {
-      const d = parseDeadlineDate(dl.date_raw);
-      if (!d) continue;
-      events.push({
-        milestone: m,
-        deadline: dl,
-        date: d,
-        dateKey: toDateKey(d),
-      });
-    }
-  }
-  return events;
-}
-
-function groupByDate(events: CalendarEvent[]): DayEventsGroup {
-  const grouped: DayEventsGroup = {};
-  for (const ev of events) {
-    if (!grouped[ev.dateKey]) grouped[ev.dateKey] = [];
-    grouped[ev.dateKey].push(ev);
-  }
-  return grouped;
-}
-
-/** Priority ordering for urgency levels (lower = more urgent). */
-const URGENCY_PRIORITY: Record<UrgencyLevel, number> = {
+/** Priority ordering for severity levels (lower = more urgent). */
+const SEVERITY_PRIORITY: Record<DeadlineSeverity, number> = {
   critical: 0,
-  standard: 1,
+  warning: 1,
   future: 2,
   past: 3,
 };
 
-/** Deduplicate events by file within a day – show one entry per file per day */
-function uniqueFilesForDay(events: CalendarEvent[]): {
-  milestone: Milestone;
-  maxUrgency: UrgencyLevel;
+/**
+ * Get the highest-priority (most urgent) severity from a CalendarDayData.
+ * Used for cell background tint.
+ */
+function getTopSeverity(dayData: CalendarDayData): DeadlineSeverity {
+  let top: DeadlineSeverity = dayData.items[0]?.severity ?? "past";
+  for (const item of dayData.items) {
+    if (SEVERITY_PRIORITY[item.severity] < SEVERITY_PRIORITY[top]) {
+      top = item.severity;
+    }
+  }
+  return top;
+}
+
+/**
+ * Group items by file name, tracking max severity and count per file.
+ * This deduplicates items from the same file on the same day.
+ */
+function groupItemsByFile(items: CalendarDeadlineItem[]): {
+  fileName: string;
+  maxSeverity: DeadlineSeverity;
   count: number;
+  items: CalendarDeadlineItem[];
 }[] {
-  const seen = new Map<
-    string,
-    { milestone: Milestone; maxUrgency: UrgencyLevel; count: number }
-  >();
-  for (const ev of events) {
-    const key = ev.milestone.document_id || ev.milestone.id;
-    const urgency = getUrgency(ev.date);
-    const existing = seen.get(key);
+  const fileMap = new Map<string, {
+    fileName: string;
+    maxSeverity: DeadlineSeverity;
+    count: number;
+    items: CalendarDeadlineItem[];
+  }>();
+
+  for (const item of items) {
+    const key = item.fileName;
+    const existing = fileMap.get(key);
     if (!existing) {
-      seen.set(key, { milestone: ev.milestone, maxUrgency: urgency, count: 1 });
+      fileMap.set(key, { fileName: key, maxSeverity: item.severity, count: 1, items: [item] });
     } else {
       existing.count++;
-      if (URGENCY_PRIORITY[urgency] < URGENCY_PRIORITY[existing.maxUrgency]) {
-        existing.maxUrgency = urgency;
+      existing.items.push(item);
+      if (SEVERITY_PRIORITY[item.severity] < SEVERITY_PRIORITY[existing.maxSeverity]) {
+        existing.maxSeverity = item.severity;
       }
     }
   }
-  return Array.from(seen.values());
+
+  return Array.from(fileMap.values());
+}
+
+// ── Calendar Cell Type ──────────────────────────────────────────────────────────
+
+interface CalendarCell {
+  day: number | null;
+  dateKey: string;
+  isToday: boolean;
+  dayData: CalendarDayData | null;
 }
 
 // ── Icons ───────────────────────────────────────────────────────────────────────
@@ -216,48 +141,6 @@ function CalendarButtonIcon() {
       <line x1="16" y1="2" x2="16" y2="6" />
       <line x1="8" y1="2" x2="8" y2="6" />
       <line x1="3" y1="10" x2="21" y2="10" />
-    </svg>
-  );
-}
-
-function ChevronLeftIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-      <polyline points="15 18 9 12 15 6" />
-    </svg>
-  );
-}
-
-function ChevronRightIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-      <polyline points="9 6 15 12 9 18" />
-    </svg>
-  );
-}
-
-function InfoIcon() {
-  return (
-    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 16v-4M12 8h.01" />
-    </svg>
-  );
-}
-
-function SparklesIcon() {
-  return (
-    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-      <path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z" />
-    </svg>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
     </svg>
   );
 }
@@ -289,36 +172,31 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
   });
-  const [selectedEvent, setSelectedEvent] = useState<{
-    milestone: Milestone;
-    dateKey: string;
-    events: CalendarEvent[];
-  } | null>(null);
-  // ── Derived data ────────────────────────────────────────────────────────────
-  const allEvents = useMemo(() => buildCalendarEvents(data), [data]);
-  const eventsByDate = useMemo(() => groupByDate(allEvents), [allEvents]);
+  const [selectedDay, setSelectedDay] = useState<CalendarDayData | null>(null);
 
-  // Badge count: upcoming deadlines (today + future)
-  const upcomingCount = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const unique = new Set<string>();
-    for (const ev of allEvents) {
-      if (ev.date >= today) unique.add(ev.dateKey + "|" + (ev.milestone.document_id || ev.milestone.id));
-    }
-    return unique.size;
-  }, [allEvents]);
+  // ── Timeframe-based data fetching ──────────────────────────────────────────
+  const {
+    deadlineMap,
+    serverToday,
+    totalInWindow,
+    isLoading: isTimeframeLoading,
+    isFetching: isTimeframeFetching,
+    error: timeframeError,
+    timeframe,
+  } = useCalendarTimeframe(selectedMonth);
 
-  // Overdue count
-  const overdueCount = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const unique = new Set<string>();
-    for (const ev of allEvents) {
-      if (ev.date < today) unique.add(ev.dateKey + "|" + (ev.milestone.document_id || ev.milestone.id));
+  // ── Counts for badges ──────────────────────────────────────────────────────
+  const { upcomingCount, overdueCount } = useMemo(() => {
+    let upcoming = 0;
+    let overdue = 0;
+    for (const dayData of Object.values(deadlineMap)) {
+      for (const item of dayData.items) {
+        if (item.severity === "past") overdue++;
+        else upcoming++;
+      }
     }
-    return unique.size;
-  }, [allEvents]);
+    return { upcomingCount: upcoming, overdueCount: overdue };
+  }, [deadlineMap]);
 
   // ── Month navigation ──────────────────────────────────────────────────────
   const prevMonth = useCallback(() => {
@@ -340,22 +218,27 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
     setSelectedMonth({ year: now.getFullYear(), month: now.getMonth() });
   }, []);
 
-  // ── Action handler (close both modals → fire callback) ────────────────────
+  // ── Action handler: find matching Milestone from prop data for actions ────
+  const findMilestoneByFileName = useCallback(
+    (fileName: string): Milestone | null => {
+      return data.find((m) => m.file_name === fileName) ?? null;
+    },
+    [data]
+  );
+
   const handleAction = useCallback(
-    (type: CalendarActionType, milestone: Milestone) => {
-      // Close both modals immediately
-      setSelectedEvent(null);
+    (type: CalendarActionType, fileName: string) => {
+      const milestone = findMilestoneByFileName(fileName);
+      if (!milestone) return;
+      setSelectedDay(null);
       setIsOpen(false);
-      // Fire the action after React commits the portal unmount.
-      // Using double-rAF ensures the DOM is fully flushed before the
-      // target modal in StructuralDataLookup mounts.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           onAction(type, milestone);
         });
       });
     },
-    [onAction]
+    [onAction, findMilestoneByFileName]
   );
 
   // ── Keyboard: Escape closes modals ────────────────────────────────────────
@@ -363,73 +246,51 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
     if (!isOpen) return;
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        if (selectedEvent) setSelectedEvent(null);
+        if (selectedDay) setSelectedDay(null);
         else setIsOpen(false);
       }
     }
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [isOpen, selectedEvent]);
+  }, [isOpen, selectedDay]);
 
   // ── Grid computation ──────────────────────────────────────────────────────
   const { year, month } = selectedMonth;
-  // todayKey lives outside the memo so any re-render after midnight picks up
-  // the new date, even if year/month/eventsByDate haven't changed.
-  const todayKey = toDateKey(new Date());
+  const todayKey = serverToday;
 
   const cells = useMemo<CalendarCell[]>(() => {
-    // Derived from year+month — computed inside to keep the dep array minimal.
     const daysInMonth = getDaysInMonth(year, month);
-    const firstDayOffset = getFirstDayOfWeek(year, month); // Mon = 0 … Sun = 6
+    const firstDayOffset = getFirstDayOfWeek(year, month);
 
     const result: CalendarCell[] = [];
 
-    // Leading empty cells (pads Mon-first grid before the 1st of the month)
+    // Leading empty cells
     for (let i = 0; i < firstDayOffset; i++) {
-      result.push({ day: null, dateKey: "", isToday: false, events: [] });
+      result.push({ day: null, dateKey: "", isToday: false, dayData: null });
     }
 
     // Day cells
-    // `month` is 0-indexed (JS Date convention); +1 produces the 1-indexed
-    // month number for the YYYY-MM-DD key — matching toDateKey() & eventsByDate.
     for (let d = 1; d <= daysInMonth; d++) {
       const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       result.push({
         day: d,
         dateKey: key,
         isToday: key === todayKey,
-        events: eventsByDate[key] || [],
+        dayData: deadlineMap[key] ?? null,
       });
     }
 
-    // Trailing empty cells to complete the final 7-column row.
-    // Minimum grid = 28 cells (Feb non-leap, Mon start), max = 42 (31 days, Sat start).
+    // Trailing empty cells
     while (result.length % 7 !== 0) {
-      result.push({ day: null, dateKey: "", isToday: false, events: [] });
+      result.push({ day: null, dateKey: "", isToday: false, dayData: null });
     }
 
     return result;
-  }, [year, month, todayKey, eventsByDate]);
-
-  /** Does this day have any overdue (past) events? */
-  const hasOverdueInDay = useCallback(
-    (events: CalendarEvent[]): boolean =>
-      events.some((ev) => getUrgency(ev.date) === "past"),
-    []
-  );
-
-  // ── Event click: file name in a day tile ──────────────────────────────────
-  const handleFileClick = useCallback(
-    (milestone: Milestone, dateKey: string) => {
-      const eventsForFile = (eventsByDate[dateKey] || []).filter(
-        (ev) => (ev.milestone.document_id || ev.milestone.id) === (milestone.document_id || milestone.id)
-      );
-      setSelectedEvent({ milestone, dateKey, events: eventsForFile });
-    },
-    [eventsByDate]
-  );
+  }, [year, month, todayKey, deadlineMap]);
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  const MAX_VISIBLE_FILES = 2;
 
   return (
     <>
@@ -457,7 +318,7 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
           <div
             className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 animate-[fadeIn_150ms_ease-out]"
             onClick={() => {
-              if (!selectedEvent) setIsOpen(false);
+              if (!selectedDay) setIsOpen(false);
             }}
           >
             <div
@@ -478,7 +339,7 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                   <div>
                     <h3 className="text-sm font-semibold text-white">Deadline Calendar</h3>
                     <p className="text-[11px] text-white/70 mt-0.5">
-                      {allEvents.length} deadline{allEvents.length !== 1 ? "s" : ""} across {data.length} document{data.length !== 1 ? "s" : ""}
+                      {totalInWindow} deadline{totalInWindow !== 1 ? "s" : ""} in {MONTH_NAMES[month]} {year}
                     </p>
                   </div>
                 </div>
@@ -490,64 +351,53 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                 </button>
               </div>
 
-              {/* Month Navigation */}
-              <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={prevMonth}
-                    className="p-1.5 text-gray-500 hover:text-[#6556d2] hover:bg-[#6556d2]/10 rounded-md transition-colors cursor-pointer"
-                  >
-                    <ChevronLeftIcon />
-                  </button>
-                  <h4 className="text-sm font-semibold text-gray-800 min-w-[160px] text-center">
-                    {MONTH_NAMES[month]} {year}
-                  </h4>
-                  <button
-                    onClick={nextMonth}
-                    className="p-1.5 text-gray-500 hover:text-[#6556d2] hover:bg-[#6556d2]/10 rounded-md transition-colors cursor-pointer"
-                  >
-                    <ChevronRightIcon />
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={goToToday}
-                    className="px-2.5 py-1 text-[11px] font-medium text-[#6556d2] border border-[#6556d2]/30 rounded-md hover:bg-[#6556d2]/5 transition-colors cursor-pointer"
-                  >
-                    Today
-                  </button>
-                  {/* Non-clickable upcoming deadlines counter badge */}
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-[#6556d2] bg-[#6556d2]/8 border border-[#6556d2]/20 rounded-md select-none">
-                    Upcoming Deadlines:
-                    <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 text-[10px] font-bold text-white bg-[#6556d2] rounded-full">
-                      {upcomingCount}
-                    </span>
-                  </span>
-                </div>
-              </div>
+              {/* Month Navigation + Toolbar Controls */}
+              <CalendarToolbar
+                monthLabel={`${MONTH_NAMES[month]} ${year}`}
+                upcomingCount={upcomingCount}
+                onPrevMonth={prevMonth}
+                onNextMonth={nextMonth}
+                onGoToToday={goToToday}
+              />
 
               {/* Calendar Grid */}
-              <div className="overflow-auto flex-1 p-4">
-                {allEvents.length === 0 ? (
+              <div className="overflow-auto flex-1 p-4 relative">
+                {/* Fetching overlay */}
+                {isTimeframeFetching && !isTimeframeLoading && (
+                  <div className="absolute top-2 right-6 z-10 flex items-center gap-1.5 px-2.5 py-1 bg-white/90 border border-[#6556d2]/20 rounded-full shadow-sm">
+                    <span className="h-2 w-2 rounded-full bg-[#6556d2] animate-pulse" />
+                    <span className="text-[10px] text-[#6556d2] font-medium">Loading…</span>
+                  </div>
+                )}
+
+                {/* Error banner */}
+                {timeframeError && (
+                  <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+                    <span className="text-red-500"><WarningIcon /></span>
+                    <span className="text-xs text-red-600">
+                      Failed to load calendar data: {timeframeError}
+                    </span>
+                  </div>
+                )}
+
+                {/* Range indicator */}
+                {timeframe && (
+                  <div className="mb-2 text-[10px] text-gray-400 text-right">
+                    {timeframe.startDate} — {timeframe.endDate}
+                  </div>
+                )}
+
+                {isTimeframeLoading ? (
                   <div className="flex flex-col items-center justify-center py-20 gap-3">
-                    <svg className="h-12 w-12 text-gray-300" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                      <line x1="16" y1="2" x2="16" y2="6" />
-                      <line x1="8" y1="2" x2="8" y2="6" />
-                      <line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
-                    <p className="text-sm text-gray-400">No deadlines found in any documents.</p>
-                    <p className="text-xs text-gray-400">Deadlines will appear here once documents with deadline data are uploaded.</p>
+                    <div className="h-8 w-8 border-2 border-[#6556d2]/30 border-t-[#6556d2] rounded-full animate-spin" />
+                    <p className="text-sm text-gray-400">Loading calendar data…</p>
                   </div>
                 ) : (
                   <>
                     {/* Day headers */}
                     <div className="grid grid-cols-7 gap-px mb-1">
                       {DAY_HEADERS.map((d) => (
-                        <div
-                          key={d}
-                          className="px-2 py-1.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wider"
-                        >
+                        <div key={d} className="px-2 py-1.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                           {d}
                         </div>
                       ))}
@@ -560,28 +410,23 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                           return <div key={idx} className="bg-gray-50/80 min-h-[90px]" />;
                         }
 
-                        const files = uniqueFilesForDay(cell.events);
-                        const isOverdue = hasOverdueInDay(cell.events);
-                        const maxVisible = 2;
-
-                        // Determine cell background tint from the highest-urgency event
-                        const topUrgency: UrgencyLevel | null =
-                          files.length > 0
-                            ? files.reduce<UrgencyLevel>((best, f) =>
-                                URGENCY_PRIORITY[f.maxUrgency] < URGENCY_PRIORITY[best]
-                                  ? f.maxUrgency
-                                  : best
-                              , files[0].maxUrgency)
-                            : null;
+                        const dayData = cell.dayData;
+                        const hasDeadlines = dayData !== null && dayData.items.length > 0;
+                        const fileGroups = hasDeadlines ? groupItemsByFile(dayData.items) : [];
+                        const topSev = hasDeadlines ? getTopSeverity(dayData) : null;
+                        const hasPast = hasDeadlines && dayData.items.some((i) => i.severity === "past");
+                        const hasCritical = hasDeadlines && dayData.items.some((i) => i.severity === "critical");
+                        /** The severity to display for the warning indicator (critical takes priority). */
+                        const indicatorSeverity = hasCritical ? "critical" as const : hasPast ? "past" as const : null;
 
                         return (
                           <div
                             key={idx}
                             className={`min-h-[90px] p-1.5 relative transition-colors ${
                               cell.isToday ? "ring-2 ring-[#6556d2] ring-inset" : ""
-                            } ${topUrgency ? urgencyBgTint(topUrgency) : "bg-white"}`}
+                            } ${topSev ? severityBgTint(topSev) : "bg-white"}`}
                           >
-                            {/* Day number */}
+                            {/* Day number + severity indicator */}
                             <div className="flex items-center justify-between mb-1">
                               <span
                                 className={`text-xs font-medium leading-none ${
@@ -592,43 +437,46 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                               >
                                 {cell.day}
                               </span>
-                              {isOverdue && !cell.isToday && (
-                                <span className="text-red-400">
-                                  <WarningIcon />
-                                </span>
+                              {indicatorSeverity && !cell.isToday && (
+                                <DeadlineSeverityIndicator severity={indicatorSeverity} />
                               )}
                             </div>
 
-                            {/* File entries */}
-                            <div className="space-y-0.5">
-                              {files.slice(0, maxVisible).map((f) => {
-                                const fileName = f.milestone.file_name || "Unknown";
-                                const truncated =
-                                  fileName.length > 18
-                                    ? fileName.slice(0, 16) + "…"
-                                    : fileName;
-                                return (
+                            {/* Deadline file entries */}
+                            {hasDeadlines && (
+                              <div className="space-y-0.5">
+                                {fileGroups.slice(0, MAX_VISIBLE_FILES).map((fg) => {
+                                  const truncated =
+                                    fg.fileName.length > 18
+                                      ? fg.fileName.slice(0, 16) + "…"
+                                      : fg.fileName;
+                                  return (
+                                    <button
+                                      key={fg.fileName}
+                                      onClick={() => setSelectedDay(dayData)}
+                                      className="w-full text-left flex items-center gap-1 px-1 py-0.5 rounded text-[10px] leading-tight hover:bg-[#6556d2]/10 transition-colors cursor-pointer group truncate"
+                                      title={`${fg.fileName} — ${fg.count} deadline${fg.count !== 1 ? "s" : ""}`}
+                                    >
+                                      <span className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${severityDotColor(fg.maxSeverity)}`} />
+                                      <span className={`truncate ${severityTextColor(fg.maxSeverity)} group-hover:text-[#6556d2] font-medium`}>
+                                        {truncated}
+                                      </span>
+                                      {fg.count > 1 && (
+                                        <span className="text-[9px] text-gray-400 flex-shrink-0">({fg.count})</span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                                {fileGroups.length > MAX_VISIBLE_FILES && (
                                   <button
-                                    key={f.milestone.document_id || f.milestone.id}
-                                    onClick={() => handleFileClick(f.milestone, cell.dateKey)}
-                                    className="w-full text-left flex items-center gap-1 px-1 py-0.5 rounded text-[10px] leading-tight hover:bg-[#6556d2]/10 transition-colors cursor-pointer group truncate"
-                                    title={`${fileName} — ${f.count} deadline${f.count !== 1 ? "s" : ""}`}
+                                    onClick={() => setSelectedDay(dayData)}
+                                    className="block px-1 text-[9px] text-gray-400 font-medium hover:text-[#6556d2] cursor-pointer"
                                   >
-                                    <span
-                                      className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${urgencyDotColor(f.maxUrgency)}`}
-                                    />
-                                    <span className={`truncate ${urgencyTextColor(f.maxUrgency)} group-hover:text-[#6556d2] font-medium`}>
-                                      {truncated}
-                                    </span>
+                                    +{fileGroups.length - MAX_VISIBLE_FILES} more
                                   </button>
-                                );
-                              })}
-                              {files.length > maxVisible && (
-                                <span className="block px-1 text-[9px] text-gray-400 font-medium">
-                                  +{files.length - maxVisible} more
-                                </span>
-                              )}
-                            </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -642,11 +490,11 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" />
-                        <span className="text-[10px] text-gray-600 font-medium">Standard Reminder <span className="text-gray-400">(2–10 days)</span></span>
+                        <span className="text-[10px] text-gray-600 font-medium">Warning Reminder<span className="text-gray-400">(2–10 days)</span></span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block h-2.5 w-2.5 rounded-sm bg-blue-500" />
-                        <span className="text-[10px] text-gray-600 font-medium">Future Reminder <span className="text-gray-400">(&gt; 30 days)</span></span>
+                        <span className="text-[10px] text-gray-600 font-medium">Future Reminder<span className="text-gray-400">(&gt; 10 days)</span></span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block h-2.5 w-2.5 rounded-sm bg-gray-400" />
@@ -668,11 +516,11 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
               </div>
             </div>
 
-            {/* ── Secondary Modal: Deadlines for [File Name] ─────────────── */}
-            {selectedEvent && (
+            {/* ── Secondary Modal: Deadlines for selected day ─────────────── */}
+            {selectedDay && (
               <div
                 className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 animate-[fadeIn_100ms_ease-out]"
-                onClick={() => setSelectedEvent(null)}
+                onClick={() => setSelectedDay(null)}
               >
                 <div
                   className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden max-h-[80vh] flex flex-col animate-[fadeIn_100ms_ease-out]"
@@ -682,14 +530,14 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                   <div className="px-5 py-3.5 bg-[#6556d2] flex items-center justify-between flex-shrink-0">
                     <div className="min-w-0 flex-1">
                       <h3 className="text-sm font-semibold text-white truncate">
-                        Deadlines for {selectedEvent.milestone.file_name}
+                        Deadlines for {formatDisplayDate(selectedDay.date)}
                       </h3>
                       <p className="text-[11px] text-white/70 mt-0.5">
-                        {formatDisplayDate(selectedEvent.dateKey)} &middot; {selectedEvent.events.length} deadline{selectedEvent.events.length !== 1 ? "s" : ""}
+                        {selectedDay.count} deadline{selectedDay.count !== 1 ? "s" : ""} &middot; {selectedDay.documentsAffected.length} document{selectedDay.documentsAffected.length !== 1 ? "s" : ""}
                       </p>
                     </div>
                     <button
-                      onClick={() => setSelectedEvent(null)}
+                      onClick={() => setSelectedDay(null)}
                       className="text-white/70 hover:text-white cursor-pointer text-lg leading-none ml-3 flex-shrink-0"
                     >
                       &times;
@@ -698,77 +546,51 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
 
                   {/* Deadline list */}
                   <div className="overflow-auto flex-1 p-5">
-                    {selectedEvent.events.length === 0 ? (
+                    {selectedDay.items.length === 0 ? (
                       <p className="text-sm text-gray-400 text-center py-6">No deadline details available.</p>
                     ) : (
                       <div className="space-y-3">
-                        {selectedEvent.events.map((ev, idx) => {
-                          const urgency = getUrgency(ev.date);
-                          return (
-                            <div
-                              key={idx}
-                              className="rounded-lg border border-gray-100 bg-gray-50/50 p-3.5"
-                            >
-                              <div className="flex items-start gap-2">
-                                <span className={`inline-block h-2 w-2 rounded-full mt-1.5 flex-shrink-0 ${urgencyDotColor(urgency)}`} />
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-xs text-gray-700 leading-relaxed font-medium">
-                                    {ev.deadline.description || "No description"}
+                        {selectedDay.items.map((item, idx) => (
+                          <div key={idx} className="rounded-lg border border-gray-100 bg-gray-50/50 p-3.5">
+                            <div className="flex items-start gap-2">
+                              <span className={`inline-block h-2 w-2 rounded-full mt-1.5 flex-shrink-0 ${severityDotColor(item.severity)}`} />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs text-gray-800 font-semibold truncate" title={item.fileName}>
+                                  {item.fileName}
+                                </p>
+                                {item.description && (
+                                  <p className="text-xs text-gray-600 leading-relaxed mt-1">
+                                    {item.description}
                                   </p>
-                                  <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-400">
-                                    {ev.deadline.section_title && (
-                                      <span>Section: {ev.deadline.section_title}</span>
-                                    )}
-                                    {ev.deadline.section_index != null && (
-                                      <span>Page: {String(ev.deadline.section_index)}</span>
-                                    )}
-                                    <span className={`font-semibold ${urgencyTextColor(urgency)}`}>
-                                      {urgencyLabel(urgency)}
-                                    </span>
-                                  </div>
+                                )}
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] text-gray-400">
+                                  {item.sectionTitle && (
+                                    <span>Section: {item.sectionTitle}</span>
+                                  )}
+                                  {item.dateRaw && (
+                                    <span>Date: {item.dateRaw}</span>
+                                  )}
+                                  <span className={`font-semibold ${severityTextColor(item.severity)}`}>
+                                    {severityLabel(item.severity)}
+                                  </span>
                                 </div>
                               </div>
                             </div>
-                          );
-                        })}
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
 
                   {/* Action Buttons */}
                   <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/50">
-                    <div className="flex items-center gap-2">
-                      {/* Record Detail */}
-                      <button
-                        onClick={() => handleAction("detail", selectedEvent.milestone)}
-                        title="Record Detail"
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
-                      >
-                        <InfoIcon />
-                        Detail
-                      </button>
-                      {/* Important Info */}
-                      <button
-                        onClick={() => handleAction("importantInfo", selectedEvent.milestone)}
-                        title="Important Info"
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
-                      >
-                        <SparklesIcon />
-                        Important Info
-                      </button>
-                      {/* Deadlines */}
-                      <button
-                        onClick={() => handleAction("aiDeadlines", selectedEvent.milestone)}
-                        title="AI Deadlines"
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
-                      >
-                        <ClockIcon />
-                        Deadlines
-                      </button>
-                    </div>
+                    <DeadlineModalActions
+                      documentsAffected={selectedDay.documentsAffected}
+                      onAction={handleAction}
+                    />
                     <button
-                      onClick={() => setSelectedEvent(null)}
-                      className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
+                      onClick={() => setSelectedDay(null)}
+                      className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors cursor-pointer flex-shrink-0"
                     >
                       Close
                     </button>

@@ -221,6 +221,10 @@ const DELETE_FILE_URL =
 const TRIGGERS_URL =
   "https://20.110.72.120.nip.io/webhook/triggers";
 
+/** Calendar timeframe endpoint (used by useCalendarTimeframe hook) */
+export const CALENDAR_TIMEFRAME_URL =
+  "https://20.110.72.120.nip.io/webhook/calendar/timeframe";
+
 const REFRESH_INTERVAL_MS = 30_000;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
