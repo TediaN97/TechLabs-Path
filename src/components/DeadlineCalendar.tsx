@@ -812,14 +812,6 @@ export default function DeadlineCalendar({ data, onAction, persistedRange, onRan
       >
         <CalendarButtonIcon />
         <span className="hidden sm:inline">Calendar</span>
-        {upcomingCount > 0 && (
-          <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 text-[10px] font-bold text-white bg-[#6556d2] rounded-full">
-            {upcomingCount > 99 ? "99+" : upcomingCount}
-          </span>
-        )}
-        {overdueCount > 0 && (
-          <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-white" />
-        )}
       </button>
 
       {/* Main Calendar Modal */}
@@ -1074,15 +1066,15 @@ export default function DeadlineCalendar({ data, onAction, persistedRange, onRan
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 mt-3 px-1 py-2 bg-gray-50/60 rounded-lg border border-gray-100">
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500" />
-                        <span className="text-[10px] text-gray-600 font-medium">Red Reminder <span className="text-gray-400">(&lt; 2 days)</span></span>
+                        <span className="text-[10px] text-gray-600 font-medium">Critical Reminder <span className="text-gray-400">(&lt; 2 days)</span></span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" />
-                        <span className="text-[10px] text-gray-600 font-medium">Yellow Reminder <span className="text-gray-400">(2–10 days)</span></span>
+                        <span className="text-[10px] text-gray-600 font-medium">Standard Reminder <span className="text-gray-400">(2–10 days)</span></span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block h-2.5 w-2.5 rounded-sm bg-blue-500" />
-                        <span className="text-[10px] text-gray-600 font-medium">Blue Reminder <span className="text-gray-400">(&gt; 10 days)</span></span>
+                        <span className="text-[10px] text-gray-600 font-medium">Future Reminder <span className="text-gray-400">(&gt; 10 days)</span></span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="inline-block h-2.5 w-2.5 rounded-sm bg-gray-400" />
