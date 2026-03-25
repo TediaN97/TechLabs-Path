@@ -272,6 +272,133 @@ function WarningIcon() {
   );
 }
 
+// ── Range Types ──────────────────────────────────────────────────────────────────
+
+export interface CalendarRange {
+  start: string; // YYYY-MM-DD
+  end: string;   // YYYY-MM-DD
+}
+
+// ── Timeframe Selection Modal ────────────────────────────────────────────────────
+
+function TimeframeSelectionModal({
+  onConfirm,
+  onClose,
+}: {
+  onConfirm: (range: { start: Date; end: Date }) => void;
+  onClose: () => void;
+}) {
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function handleConfirm() {
+    if (!startDate || !endDate) {
+      setError("Please select both a start and end date.");
+      return;
+    }
+    const s = new Date(startDate + "T00:00:00");
+    const e = new Date(endDate + "T00:00:00");
+    if (isNaN(s.getTime()) || isNaN(e.getTime())) {
+      setError("Invalid date format.");
+      return;
+    }
+    if (s > e) {
+      setError("Start date must be before end date.");
+      return;
+    }
+    setError(null);
+    onConfirm({ start: s, end: e });
+  }
+
+  // Close on Escape
+  useEffect(() => {
+    function handleKey(ev: KeyboardEvent) {
+      if (ev.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 animate-[fadeIn_150ms_ease-out]"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-[fadeIn_150ms_ease-out]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-6 py-4 bg-[#6556d2] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-white/20 flex items-center justify-center">
+              <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white">Select Timeframe</h3>
+              <p className="text-[11px] text-white/70 mt-0.5">Choose a date range to view deadlines</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-white/70 hover:text-white cursor-pointer text-lg leading-none"
+          >
+            &times;
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Start Date</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setError(null); }}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2] transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">End Date</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setError(null); }}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2] transition-colors"
+            />
+          </div>
+          {error && (
+            <p className="text-xs text-red-500 font-medium">{error}</p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-end gap-2 bg-gray-50/50">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            className="px-4 py-1.5 text-xs font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer"
+          >
+            Show Calendar
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ── Props ────────────────────────────────────────────────────────────────────────
 
 export type CalendarActionType = "detail" | "importantInfo" | "aiDeadlines" | "vectorDeadlines";
@@ -279,12 +406,17 @@ export type CalendarActionType = "detail" | "importantInfo" | "aiDeadlines" | "v
 interface DeadlineCalendarProps {
   data: Milestone[];
   onAction: (type: CalendarActionType, milestone: Milestone) => void;
+  /** Persisted date range — if set, calendar opens directly without timeframe selection */
+  persistedRange: CalendarRange | null;
+  /** Called when user confirms a range selection */
+  onRangeChange: (range: { start: Date | null; end: Date | null }) => void;
 }
 
 // ── Component ───────────────────────────────────────────────────────────────────
 
-export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarProps) {
+export default function DeadlineCalendar({ data, onAction, persistedRange, onRangeChange }: DeadlineCalendarProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [showTimeframeModal, setShowTimeframeModal] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -294,31 +426,78 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
     dateKey: string;
     events: CalendarEvent[];
   } | null>(null);
+
+  // ── Calendar button click: show timeframe modal or open calendar directly ──
+  const handleCalendarButtonClick = useCallback(() => {
+    if (persistedRange) {
+      // Range already exists — open calendar directly
+      const start = new Date(persistedRange.start + "T00:00:00");
+      setSelectedMonth({ year: start.getFullYear(), month: start.getMonth() });
+      setIsOpen(true);
+    } else {
+      // No range — show timeframe selection
+      setShowTimeframeModal(true);
+    }
+  }, [persistedRange]);
+
+  // ── Handle timeframe confirmation ──────────────────────────────────────────
+  const handleTimeframeConfirm = useCallback(
+    (range: { start: Date; end: Date }) => {
+      onRangeChange({ start: range.start, end: range.end });
+      setShowTimeframeModal(false);
+      setSelectedMonth({ year: range.start.getFullYear(), month: range.start.getMonth() });
+      setIsOpen(true);
+    },
+    [onRangeChange]
+  );
+
+  // ── Change Range: reset persisted range and show timeframe modal ───────────
+  const handleChangeRange = useCallback(() => {
+    onRangeChange({ start: null, end: null });
+    setIsOpen(false);
+    setSelectedEvent(null);
+    // Show timeframe modal after a tick so the calendar closes first
+    requestAnimationFrame(() => {
+      setShowTimeframeModal(true);
+    });
+  }, [onRangeChange]);
+
   // ── Derived data ────────────────────────────────────────────────────────────
   const allEvents = useMemo(() => buildCalendarEvents(data), [data]);
-  const eventsByDate = useMemo(() => groupByDate(allEvents), [allEvents]);
 
-  // Badge count: upcoming deadlines (today + future)
+  // Filter events by persisted range
+  const rangeFilteredEvents = useMemo(() => {
+    if (!persistedRange) return allEvents;
+    const rangeStart = new Date(persistedRange.start + "T00:00:00");
+    const rangeEnd = new Date(persistedRange.end + "T00:00:00");
+    rangeStart.setHours(0, 0, 0, 0);
+    rangeEnd.setHours(23, 59, 59, 999);
+    return allEvents.filter((ev) => ev.date >= rangeStart && ev.date <= rangeEnd);
+  }, [allEvents, persistedRange]);
+
+  const eventsByDate = useMemo(() => groupByDate(rangeFilteredEvents), [rangeFilteredEvents]);
+
+  // Badge count: upcoming deadlines (today + future) — scoped to range
   const upcomingCount = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const unique = new Set<string>();
-    for (const ev of allEvents) {
+    for (const ev of rangeFilteredEvents) {
       if (ev.date >= today) unique.add(ev.dateKey + "|" + (ev.milestone.document_id || ev.milestone.id));
     }
     return unique.size;
-  }, [allEvents]);
+  }, [rangeFilteredEvents]);
 
-  // Overdue count
+  // Overdue count — scoped to range
   const overdueCount = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const unique = new Set<string>();
-    for (const ev of allEvents) {
+    for (const ev of rangeFilteredEvents) {
       if (ev.date < today) unique.add(ev.dateKey + "|" + (ev.milestone.document_id || ev.milestone.id));
     }
     return unique.size;
-  }, [allEvents]);
+  }, [rangeFilteredEvents]);
 
   // ── Month navigation ──────────────────────────────────────────────────────
   const prevMonth = useCallback(() => {
@@ -433,9 +612,17 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
 
   return (
     <>
+      {/* Timeframe Selection Modal */}
+      {showTimeframeModal && (
+        <TimeframeSelectionModal
+          onConfirm={handleTimeframeConfirm}
+          onClose={() => setShowTimeframeModal(false)}
+        />
+      )}
+
       {/* Trigger Button */}
       <button
-        onClick={() => setIsOpen(true)}
+        onClick={handleCalendarButtonClick}
         className="relative inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#6556d2] bg-[#6556d2]/10 border border-[#6556d2]/20 rounded-lg hover:bg-[#6556d2]/20 transition-colors cursor-pointer"
         title="Deadline Calendar"
       >
@@ -478,16 +665,31 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                   <div>
                     <h3 className="text-sm font-semibold text-white">Deadline Calendar</h3>
                     <p className="text-[11px] text-white/70 mt-0.5">
-                      {allEvents.length} deadline{allEvents.length !== 1 ? "s" : ""} across {data.length} document{data.length !== 1 ? "s" : ""}
+                      {rangeFilteredEvents.length} deadline{rangeFilteredEvents.length !== 1 ? "s" : ""} across {data.length} document{data.length !== 1 ? "s" : ""}
+                      {persistedRange && (
+                        <span className="ml-1.5">
+                          &middot; {persistedRange.start} to {persistedRange.end}
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="text-white/70 hover:text-white cursor-pointer text-lg leading-none"
-                >
-                  &times;
-                </button>
+                <div className="flex items-center gap-2">
+                  {/* Change Range button */}
+                  <button
+                    onClick={handleChangeRange}
+                    className="px-2.5 py-1 text-[11px] font-medium text-white/90 bg-white/20 border border-white/30 rounded-md hover:bg-white/30 transition-colors cursor-pointer"
+                    title="Change the selected date range"
+                  >
+                    Change Range
+                  </button>
+                  <button
+                    onClick={() => setIsOpen(false)}
+                    className="text-white/70 hover:text-white cursor-pointer text-lg leading-none"
+                  >
+                    &times;
+                  </button>
+                </div>
               </div>
 
               {/* Month Navigation */}
@@ -528,7 +730,7 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
 
               {/* Calendar Grid */}
               <div className="overflow-auto flex-1 p-4">
-                {allEvents.length === 0 ? (
+                {rangeFilteredEvents.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 gap-3">
                     <svg className="h-12 w-12 text-gray-300" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                       <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -558,6 +760,28 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                       {cells.map((cell, idx) => {
                         if (cell.day === null) {
                           return <div key={idx} className="bg-gray-50/80 min-h-[90px]" />;
+                        }
+
+                        // Check if day is outside the selected range
+                        const isOutOfRange = (() => {
+                          if (!persistedRange) return false;
+                          const cellDate = new Date(cell.dateKey + "T00:00:00");
+                          const rangeStart = new Date(persistedRange.start + "T00:00:00");
+                          const rangeEnd = new Date(persistedRange.end + "T00:00:00");
+                          return cellDate < rangeStart || cellDate > rangeEnd;
+                        })();
+
+                        if (isOutOfRange) {
+                          return (
+                            <div
+                              key={idx}
+                              className="min-h-[90px] p-1.5 bg-gray-100/60 pointer-events-none select-none"
+                            >
+                              <span className="text-xs font-medium text-gray-300 leading-none">
+                                {cell.day}
+                              </span>
+                            </div>
+                          );
                         }
 
                         const files = uniqueFilesForDay(cell.events);
