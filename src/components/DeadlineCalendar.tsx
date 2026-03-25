@@ -87,9 +87,9 @@ const COLOR_MAP: Record<ColorCategory, { dot: string; bg: string; text: string; 
 };
 
 const LEGEND: { key: ColorCategory; label: string }[] = [
-  { key: "critical", label: "Critical Reminder (< 2 days)" },
-  { key: "warning", label: "Standard Reminder (2\u201310 days)" },
-  { key: "future", label: "Future Reminder (> 10 days)" },
+  { key: "critical", label: "Red Reminder (< 2 days)" },
+  { key: "warning", label: "Yellow Reminder (2\u201310 days)" },
+  { key: "future", label: "Blue Reminder (> 10 days)" },
   { key: "past", label: "Past (overdue)" },
 ];
 
@@ -348,6 +348,7 @@ function CalendarViewModal({
   totalDocuments,
   onClose,
   onCloseCalendar,
+  onChangeRange,
   onInfo,
   onImportantInfo,
   onDeadlines,
@@ -415,8 +416,6 @@ function CalendarViewModal({
   const currentYM = viewYear * 12 + viewMonth;
   const canPrev = currentYM > startYM;
   const canNext = currentYM < endYM;
-
-  const upcomingCount = useMemo(() => entries.filter((e) => e.daysRemaining >= 0).length, [entries]);
 
   const grid = useMemo(() => buildCalendarGrid(viewYear, viewMonth), [viewYear, viewMonth]);
 
@@ -582,20 +581,20 @@ function CalendarViewModal({
                 <button
                   ref={upcomingBadgeRef}
                   onClick={handleUpcomingClick}
-                  disabled={upcomingCount === 0}
+                  disabled={upcomingInRange.length === 0}
                   className={`inline-flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold rounded-full transition-colors ${
-                    upcomingCount > 0
+                    upcomingInRange.length > 0
                       ? "text-[#6556d2] bg-[#6556d2]/10 hover:bg-[#6556d2]/20 cursor-pointer"
                       : "text-gray-400 bg-gray-100 cursor-default"
                   }`}
                 >
                   Upcoming Deadlines:
                   <span className={`inline-flex items-center justify-center h-5 min-w-[20px] px-1 text-[11px] font-bold rounded-full ${
-                    upcomingCount > 0 ? "text-white bg-[#6556d2]" : "text-gray-400 bg-gray-200"
+                    upcomingInRange.length > 0 ? "text-white bg-[#6556d2]" : "text-gray-400 bg-gray-200"
                   }`}>
-                    {isLoading ? "\u2026" : upcomingCount}
+                    {isLoading ? "\u2026" : upcomingInRange.length}
                   </span>
-                  {upcomingCount > 1 && (
+                  {upcomingInRange.length > 1 && (
                     <svg className={`h-3.5 w-3.5 transition-transform ${upcomingDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                       <polyline points="6 9 12 15 18 9" />
                     </svg>
@@ -683,7 +682,7 @@ function CalendarViewModal({
               <div className="grid grid-cols-7 border-l border-t border-gray-200">
                 {grid.map((cell, idx) => {
                   if (!cell) {
-                    return <div key={`empty-${idx}`} className="border-r border-b border-gray-200 bg-gray-100 min-h-[88px]" />;
+                    return <div key={`empty-${idx}`} className="border-r border-b border-gray-200 bg-gray-200 min-h-[88px] relative"><div className="absolute inset-0 bg-gray-900/10" /></div>;
                   }
 
                   const dayNum = cell.getDate();
@@ -698,9 +697,10 @@ function CalendarViewModal({
                     return (
                       <div
                         key={dayNum}
-                        className="border-r border-b border-gray-200 min-h-[88px] p-1.5 bg-gray-100 pointer-events-none select-none"
+                        className="border-r border-b border-gray-200 min-h-[88px] p-1.5 bg-gray-200 pointer-events-none select-none relative"
                       >
-                        <span className="inline-flex items-center justify-center h-7 w-7 text-[13px] font-semibold rounded-full text-gray-700 opacity-30">
+                        <div className="absolute inset-0 bg-gray-900/10" />
+                        <span className="inline-flex items-center justify-center h-7 w-7 text-[13px] font-semibold rounded-full text-gray-500 opacity-40 relative">
                           {dayNum}
                         </span>
                       </div>
