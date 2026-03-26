@@ -291,7 +291,7 @@ function TriggersPanel({
         ) : (
           <ul className="divide-y divide-gray-50 max-h-[420px] overflow-y-auto">
             {triggers.map((t) => {
-              const style = triggerStatusStyle(t.status, t.last_execution_status);
+              const style = triggerStatusStyle(t.status, t.status);
               return (
                 <li key={t.id} className="px-4 py-3 group hover:bg-gray-50/60 transition-colors">
                   {/* Row 1: Label + action buttons */}
@@ -324,7 +324,7 @@ function TriggersPanel({
                     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${style.bg}`}>
                       <span className={`inline-block h-1.5 w-1.5 rounded-full ${style.dot} ${style.pulse ? "animate-pulse" : ""}`} />
                       <span className={`text-[10px] font-medium ${style.text}`}>
-                        {triggerStatusLabel(t.status, t.last_execution_status)}
+                        {triggerStatusLabel(t.status, t.status)}
                       </span>
                     </span>
                   </div>
