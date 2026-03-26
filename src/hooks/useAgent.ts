@@ -205,6 +205,10 @@ function mapDocumentToMilestone(doc: ApiDocument): Milestone {
 const N8N_CHAT_URL =
   "https://20.110.72.120.nip.io/webhook/chat";
 
+/** n8n chat-with-document webhook (CSV/XLSX) */
+const CHAT_WITH_DOC_URL =
+  "https://20.110.72.120.nip.io/webhook/chat_with_doc";
+
 /** Production API endpoint for fetching all documents */
 const DATA_REFRESH_URL =
   "https://20.110.72.120.nip.io/webhook/getAllDocuments";
@@ -292,6 +296,106 @@ async function sendChatMessage(
     return Array.isArray(json) ? json : [json];
   } catch (err) {
     console.error("[Chat] request failed:", err);
+    return null;
+  }
+}
+
+/** Content types that indicate a file/binary response from chat_with_doc */
+const FILE_CONTENT_TYPES = [
+  "text/csv",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/octet-stream",
+];
+
+/** Result type for chat_with_doc: either JSON or a downloadable file */
+interface ChatWithDocResult {
+  kind: "json" | "file";
+  json?: unknown[];
+  file?: { blob: Blob; fileName: string; mimeType: string };
+}
+
+/**
+ * Extract filename from Content-Disposition header.
+ * Handles: attachment; filename="report.csv"  or  attachment; filename=report.csv
+ */
+function parseContentDispositionFilename(header: string | null): string | null {
+  if (!header) return null;
+  // Try quoted filename first: filename="..."
+  const quoted = header.match(/filename\*?=["']?([^"';\n]+)["']?/i);
+  return quoted?.[1]?.trim() || null;
+}
+
+/**
+ * Generate a fallback filename based on content type and current timestamp.
+ */
+function generateFallbackFilename(mimeType: string): string {
+  const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  if (mimeType.includes("spreadsheetml") || mimeType.includes("xlsx")) {
+    return `export-${ts}.xlsx`;
+  }
+  return `export-${ts}.csv`;
+}
+
+/**
+ * POST to the n8n chat-with-document webhook.
+ * Sends multipart/form-data with file, message, and session_id.
+ *
+ * The backend may respond with JSON (normal chat reply) or a binary file.
+ * We inspect Content-Type to decide how to handle the response.
+ */
+async function sendChatWithDoc(
+  message: string,
+  file: File
+): Promise<ChatWithDocResult | null> {
+  try {
+    const sessionId = getOrCreateSessionId();
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("message", message);
+    formData.append("session_id", sessionId);
+
+    const res = await fetch(CHAT_WITH_DOC_URL, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      console.warn("[ChatWithDoc] n8n returned HTTP", res.status);
+      return null;
+    }
+
+    // ── Detect file vs JSON response ──────────────────────────────────
+    const contentType = (res.headers.get("Content-Type") || "").toLowerCase();
+    const isFileResponse = FILE_CONTENT_TYPES.some((ft) =>
+      contentType.includes(ft)
+    );
+
+    if (isFileResponse) {
+      const blob = await res.blob();
+      const dispositionName = parseContentDispositionFilename(
+        res.headers.get("Content-Disposition")
+      );
+      const fileName = dispositionName || generateFallbackFilename(contentType);
+      console.log("[ChatWithDoc] file response:", fileName, contentType);
+      return {
+        kind: "file",
+        file: { blob, fileName, mimeType: contentType },
+      };
+    }
+
+    // ── Fallback: treat as JSON (existing behavior) ───────────────────
+    const text = await res.text();
+    if (!text || text.trim().length === 0) {
+      console.warn("[ChatWithDoc] n8n returned empty body.");
+      return null;
+    }
+    const json = JSON.parse(text);
+    console.log("[ChatWithDoc] n8n response:", json);
+    return {
+      kind: "json",
+      json: Array.isArray(json) ? json : [json],
+    };
+  } catch (err) {
+    console.error("[ChatWithDoc] request failed:", err);
     return null;
   }
 }
@@ -690,10 +794,25 @@ export function useAgent() {
     };
   }, [refreshTriggers]);
 
+  // ── Cleanup blob URLs on unmount to prevent memory leaks ──────────────
+  useEffect(() => {
+    return () => {
+      // Revoke all export blob URLs when the hook unmounts
+      setExports((prev) => {
+        for (const exp of prev) {
+          if (exp.blob_url?.startsWith("blob:")) {
+            URL.revokeObjectURL(exp.blob_url);
+          }
+        }
+        return prev;
+      });
+    };
+  }, []);
+
   // ── sendMessage: POST to n8n AI-agent → parse response → display ─────
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, structuredFile?: File) => {
       // Build the request payload for debug visibility
       const sessionId = getOrCreateSessionId();
       const requestPayload = {
@@ -702,52 +821,106 @@ export function useAgent() {
         sessionId,
         message: text,
         chatInput: text,
+        ...(structuredFile ? { attached_file: structuredFile.name } : {}),
       };
 
       // 1. Append user message with raw request
       const userMsg: ChatMessage = {
         id: uid(),
         role: "user",
-        content: text,
+        content: structuredFile
+          ? `${text}\n📎 ${structuredFile.name}`
+          : text,
         rawJson: requestPayload,
       };
       setMessages((prev) => [...prev, userMsg]);
       setIsProcessing(true);
 
       try {
-        // 2. POST { session_id, message } to the n8n chat webhook
-        const responseArray = await sendChatMessage(text);
+        // 2. Route to the appropriate webhook based on file attachment
+        if (structuredFile) {
+          // ── chat_with_doc path (may return file OR JSON) ──────────
+          const docResult = await sendChatWithDoc(text, structuredFile);
 
-        if (responseArray) {
-          // 3. Extract the last assistant reply from the response
-          const assistantContent = extractAssistantReply(responseArray);
+          if (docResult?.kind === "file" && docResult.file) {
+            // Backend returned a generated file — surface as export
+            const { blob, fileName, mimeType } = docResult.file;
+            const blobUrl = URL.createObjectURL(blob);
 
-          const replyText =
-            assistantContent || "I've processed your request.";
+            const exportFile: ExportFile = {
+              id: uid(),
+              filename: fileName,
+              created_at: now(),
+              record_count: 0, // file response — row count unknown
+              blob_url: blobUrl,
+            };
+            setExports((prev) => [exportFile, ...prev]);
 
-          const assistantMsg: ChatMessage = {
-            id: uid(),
-            role: "assistant",
-            content: replyText,
-            rawJson: responseArray,
-          };
-          setMessages((prev) => [...prev, assistantMsg]);
-          logExecution("AI agent responded");
+            const assistantMsg: ChatMessage = {
+              id: uid(),
+              role: "assistant",
+              content: `Export generated: **${fileName}** (${mimeType.split(";")[0]})\nThe file is available in the Export templates panel.`,
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            logExecution(`Export generated: ${fileName}`);
+          } else if (docResult?.kind === "json" && docResult.json) {
+            // Normal JSON reply from chat_with_doc
+            const assistantContent = extractAssistantReply(docResult.json);
+            const replyText = assistantContent || "I've processed your request.";
 
-          // 4. If the reply indicates a data change, refresh the table
-          if (replyIndicatesDataChange(replyText)) {
-            await refreshData();
+            const assistantMsg: ChatMessage = {
+              id: uid(),
+              role: "assistant",
+              content: replyText,
+              rawJson: docResult.json,
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            logExecution("AI agent responded");
+
+            if (replyIndicatesDataChange(replyText)) {
+              await refreshData();
+            }
+          } else {
+            // Null / error from chat_with_doc
+            const fallbackMsg: ChatMessage = {
+              id: uid(),
+              role: "assistant",
+              content:
+                "I received your message but the AI service is currently unavailable. Please try again shortly.",
+            };
+            setMessages((prev) => [...prev, fallbackMsg]);
+            logExecution("AI agent unavailable — no response");
           }
         } else {
-          // Webhook failed or unavailable
-          const fallbackMsg: ChatMessage = {
-            id: uid(),
-            role: "assistant",
-            content:
-              "I received your message but the AI service is currently unavailable. Please try again shortly.",
-          };
-          setMessages((prev) => [...prev, fallbackMsg]);
-          logExecution("AI agent unavailable — no response");
+          // ── Normal chat path (unchanged) ──────────────────────────
+          const responseArray = await sendChatMessage(text);
+
+          if (responseArray) {
+            const assistantContent = extractAssistantReply(responseArray);
+            const replyText = assistantContent || "I've processed your request.";
+
+            const assistantMsg: ChatMessage = {
+              id: uid(),
+              role: "assistant",
+              content: replyText,
+              rawJson: responseArray,
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            logExecution("AI agent responded");
+
+            if (replyIndicatesDataChange(replyText)) {
+              await refreshData();
+            }
+          } else {
+            const fallbackMsg: ChatMessage = {
+              id: uid(),
+              role: "assistant",
+              content:
+                "I received your message but the AI service is currently unavailable. Please try again shortly.",
+            };
+            setMessages((prev) => [...prev, fallbackMsg]);
+            logExecution("AI agent unavailable — no response");
+          }
         }
       } catch {
         const errorMsg: ChatMessage = {

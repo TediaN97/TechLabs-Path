@@ -1153,7 +1153,7 @@ function AiAnalyzedModal({
 // ── Important Info Modal ──────────────────────────────────────────────────────
 
 /** IDs / technical keys hidden from the data grid */
-const HIDDEN_KEYS = new Set(["id", "created_at", "updated_at", "document_id"]);
+const HIDDEN_KEYS = new Set(["id", "created_at", "updated_at", "document_id", "document_name"]);
 
 /** Convert snake_case key to a readable label  */
 function snakeCaseToLabel(key: string): string {
@@ -1164,6 +1164,54 @@ function snakeCaseToLabel(key: string): string {
 
 /** Heuristic: values longer than this threshold span both columns */
 const LONG_VALUE_THRESHOLD = 80;
+
+/**
+ * Try to parse a stringified JSON value. The API sometimes returns arrays
+ * and objects as JSON-encoded strings (e.g. `"[\"Foo\"]"` or `"{\"a\":1}"`).
+ * Returns the parsed value on success, or the original on failure.
+ */
+function tryParseJsonString(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if ((trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+      (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+    try { return JSON.parse(trimmed); } catch { /* not JSON — return as-is */ }
+  }
+  return value;
+}
+
+/** Render a parsed JSON array as a comma-separated list or bullet list */
+function JsonArrayValue({ items }: { items: unknown[] }) {
+  const strings = items.map((v) => (v == null ? "" : String(v))).filter(Boolean);
+  if (strings.length === 0) return <p className="mt-1 text-sm text-gray-400">&mdash;</p>;
+  if (strings.length === 1) return <p className="mt-1 text-sm text-gray-700 leading-relaxed">{strings[0]}</p>;
+  return (
+    <ul className="mt-1 space-y-0.5">
+      {strings.map((s, i) => (
+        <li key={i} className="text-sm text-gray-700 leading-relaxed flex items-start gap-1.5">
+          <span className="text-[#6556d2] mt-1.5 flex-shrink-0 h-1.5 w-1.5 rounded-full bg-current" />
+          {s}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Render a parsed JSON object as a compact key-value list */
+function JsonObjectValue({ obj }: { obj: Record<string, unknown> }) {
+  const entries = Object.entries(obj).filter(([, v]) => v != null && v !== "");
+  if (entries.length === 0) return <p className="mt-1 text-sm text-gray-400">&mdash;</p>;
+  return (
+    <div className="mt-1 space-y-1">
+      {entries.map(([k, v]) => (
+        <div key={k} className="text-sm leading-relaxed">
+          <span className="font-medium text-gray-600">{snakeCaseToLabel(k)}:</span>{" "}
+          <span className="text-gray-700">{String(v)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function ImportantInfoModal({
   milestone,
@@ -1186,9 +1234,11 @@ function ImportantInfoModal({
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  // Build entries dynamically, filtering out hidden technical keys
+  // Build entries: filter hidden keys AND null/empty values
   const entries = data
-    ? Object.entries(data).filter(([key]) => !HIDDEN_KEYS.has(key))
+    ? Object.entries(data).filter(([key, value]) =>
+        !HIDDEN_KEYS.has(key) && value != null && value !== ""
+      )
     : [];
 
   return (
@@ -1253,10 +1303,13 @@ function ImportantInfoModal({
                 <p className="text-sm text-gray-400 text-center py-6">No information available for this document.</p>
               ) : (
                 <div className="grid grid-cols-2 gap-x-8 gap-y-5">
-                  {entries.map(([key, value]) => {
-                    const stringVal = value == null ? "" : String(value);
+                  {entries.map(([key, rawValue]) => {
+                    const value = tryParseJsonString(rawValue);
+                    const isArray = Array.isArray(value);
+                    const isObject = !isArray && typeof value === "object" && value !== null;
                     const isBool = typeof value === "boolean";
-                    const isLong = stringVal.length > LONG_VALUE_THRESHOLD;
+                    const stringVal = (!isArray && !isObject && value != null) ? String(value) : "";
+                    const isLong = isArray || isObject || stringVal.length > LONG_VALUE_THRESHOLD;
 
                     return (
                       <div key={key} className={isLong ? "col-span-2" : ""}>
@@ -1264,7 +1317,11 @@ function ImportantInfoModal({
                           {snakeCaseToLabel(key)}
                         </span>
 
-                        {isBool ? (
+                        {isArray ? (
+                          <JsonArrayValue items={value as unknown[]} />
+                        ) : isObject ? (
+                          <JsonObjectValue obj={value as Record<string, unknown>} />
+                        ) : isBool ? (
                           <div className="mt-1">
                             <span
                               className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${

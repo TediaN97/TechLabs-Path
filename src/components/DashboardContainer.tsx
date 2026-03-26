@@ -24,14 +24,6 @@ function DownloadIcon() {
   );
 }
 
-function FileIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-    </svg>
-  );
-}
-
 function SpinnerIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
   return (
     <svg className={`${className} animate-spin`} fill="none" viewBox="0 0 24 24">
@@ -375,12 +367,8 @@ function TriggersPanel({
 
 function ExportsPanel({
   exportFiles,
-  isExporting,
-  onCreateCsv,
 }: {
   exportFiles: ExportFile[];
-  isExporting: boolean;
-  onCreateCsv: () => void;
 }) {
   return (
     <div className="bg-white shadow-sm rounded-lg">
@@ -389,17 +377,6 @@ function ExportsPanel({
           <DownloadIcon />
           <h2 className="text-base font-semibold text-gray-800">Export templates</h2>
         </div>
-      </div>
-
-      <div className="px-5 py-3 border-b border-gray-50">
-        <button
-          onClick={onCreateCsv}
-          disabled={isExporting}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] active:bg-[#4a3a9e] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isExporting ? <SpinnerIcon className="h-3 w-3" /> : <FileIcon />}
-          Create CSV Export
-        </button>
       </div>
 
       {exportFiles.length === 0 ? (
@@ -413,7 +390,8 @@ function ExportsPanel({
               <div className="min-w-0">
                 <p className="text-xs text-gray-700 font-medium truncate">{f.filename}</p>
                 <p className="text-[10px] text-gray-400 mt-0.5">
-                  {f.record_count} records &middot; {formatTimestamp(f.created_at)}
+                  {f.record_count > 0 && <>{f.record_count} records &middot; </>}
+                  {formatTimestamp(f.created_at)}
                 </p>
               </div>
               <a
@@ -520,8 +498,6 @@ export default function DashboardContainer() {
             />
             <ExportsPanel
               exportFiles={agent.exports}
-              isExporting={agent.isExporting}
-              onCreateCsv={agent.createCsvExport}
             />
           </div>
         </div>

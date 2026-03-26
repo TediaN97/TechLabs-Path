@@ -402,7 +402,7 @@ const TEXTAREA_MAX_HEIGHT = 200;
 
 interface ChatInterfaceProps {
   messages: ChatMessage[];
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string, structuredFile?: File) => void;
   onFileUpload: (file: File) => void;
   isLoading: boolean;
   isUploading?: boolean;
@@ -419,8 +419,10 @@ export default function ChatInterface({
 }: ChatInterfaceProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const structuredFileRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputValueRef = useRef("");
+  const [structuredFile, setStructuredFile] = useState<File | null>(null);
 
   // ── Auto-resize textarea to fit content ──────────────────────────────────
   const resizeTextarea = useCallback(() => {
@@ -447,16 +449,19 @@ export default function ChatInterface({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const value = inputValueRef.current.trim();
-    if (!value || isLoading || isUploading) return;
-    onSendMessage(value);
+    // If a structured file is attached, allow empty message; otherwise require text
+    if ((!value && !structuredFile) || isLoading || isUploading) return;
+    onSendMessage(value, structuredFile ?? undefined);
     // Clear textarea
     inputValueRef.current = "";
     if (textareaRef.current) {
       textareaRef.current.value = "";
-      // Reset height back to single line after sending
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.overflowY = "hidden";
     }
+    // Clear attached structured file after send
+    setStructuredFile(null);
+    if (structuredFileRef.current) structuredFileRef.current.value = "";
   }
 
   // ── Key handler: Enter = send, Shift+Enter = newline ───────────────────────
@@ -473,6 +478,19 @@ export default function ChatInterface({
     if (file) {
       onFileUpload(file);
       e.target.value = "";
+    }
+  }
+
+  function handleStructuredFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      if (ext !== "csv" && ext !== "xlsx") {
+        alert("Only .csv and .xlsx files are supported.");
+        e.target.value = "";
+        return;
+      }
+      setStructuredFile(file);
     }
   }
 
@@ -513,8 +531,27 @@ export default function ChatInterface({
 
       {/* Input bar — pinned to bottom, grows upward */}
       <div className="border-t border-gray-100 px-4 py-3 flex-shrink-0">
+        {/* Attached structured file indicator */}
+        {structuredFile && (
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <FileDocIcon />
+            <span className="text-xs text-gray-600 truncate max-w-[200px]">{structuredFile.name}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setStructuredFile(null);
+                if (structuredFileRef.current) structuredFileRef.current.value = "";
+              }}
+              className="text-gray-400 hover:text-red-500 text-xs font-bold leading-none cursor-pointer"
+              title="Remove attached file"
+            >
+              &times;
+            </button>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="flex items-end gap-2">
-          {/* Hidden file input */}
+          {/* Hidden file input for Upload (existing) */}
           <input
             ref={fileRef}
             type="file"
@@ -523,7 +560,16 @@ export default function ChatInterface({
             className="hidden"
           />
 
-          {/* Upload button — pinned to bottom of the row */}
+          {/* Hidden file input for structured CSV/XLSX attachment */}
+          <input
+            ref={structuredFileRef}
+            type="file"
+            accept=".csv,.xlsx"
+            onChange={handleStructuredFileChange}
+            className="hidden"
+          />
+
+          {/* Upload button — pinned to bottom of the row (UNCHANGED) */}
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
@@ -534,11 +580,30 @@ export default function ChatInterface({
             Upload
           </button>
 
+          {/* Attach CSV/XLSX button — right after Upload, before textarea */}
+          <button
+            type="button"
+            onClick={() => structuredFileRef.current?.click()}
+            disabled={isLoading || isUploading}
+            className={`inline-flex items-center mb-1 gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed ${
+              structuredFile
+                ? "bg-[#6556d2] text-white hover:bg-[#5445b5]"
+                : "border border-[#6556d2] text-[#6556d2] bg-white hover:bg-[#f0effb]"
+            }`}
+            title="Attach CSV or XLSX file for chat-with-document"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            Data File
+          </button>
+
           {/* Auto-expanding textarea */}
           <textarea
             ref={textareaRef}
             rows={1}
-            placeholder="Type a message…"
+            placeholder={structuredFile ? "Ask about your data file…" : "Type a message…"}
             onChange={(e) => {
               inputValueRef.current = e.target.value;
               resizeTextarea();

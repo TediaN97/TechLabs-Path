@@ -1,7 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install -D tailwindcss @tailwindcss/vite)"
+      "Bash(npm install -D tailwindcss @tailwindcss/vite)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //PID 5620 //F)",
+      "Bash(taskkill //PID 3128 //F)",
+      "Bash(curl -sv \"https://20.110.72.120.nip.io/webhook/get-deadlines/importantInfo/E129106A31A7E6EA!s2f0a2c7b8df14557a94cdc0ef847e0cd\")",
+      "Bash(curl -s \"https://20.110.72.120.nip.io/webhook/getAllDocuments\")",
+      "Bash(node -e \"let d='''''''';process.stdin.on\\(''''data'''',c=>d+=c\\);process.stdin.on\\(''''end'''',\\(\\)=>{const j=JSON.parse\\(d\\);const docs=j.documents||j;docs.forEach\\(x=>console.log\\(x.document_id\\)\\)}\\)\")",
+      "Bash(curl -s \"https://20.110.72.120.nip.io/webhook/get-deadlines/importantInfo/01CF47VN3WWCNZFGHNUZCKAN5G3XLC6S45\")",
+      "Bash(node -e \"let d='''''''';process.stdin.on\\(''''data'''',c=>d+=c\\);process.stdin.on\\(''''end'''',\\(\\)=>console.log\\(JSON.stringify\\(JSON.parse\\(d\\),null,2\\)\\)\\)\")",
+      "Bash(curl -s \"https://20.110.72.120.nip.io/webhook/get-deadlines/importantInfo/01CF47WCKGJ9NX9YNJM8EJXNW80B1A5C6T\")",
+      "Bash(node -e \"let d='''''''';process.stdin.on\\(''''data'''',c=>d+=c\\);process.stdin.on\\(''''end'''',\\(\\)=>{const j=JSON.parse\\(d\\);const keys=Object.keys\\(j\\);console.log\\(''''Keys:'''',keys.length\\);keys.forEach\\(k=>{const v=j[k];const t=v===null?''''null'''':typeof v;const preview=v===null?''''null'''':String\\(v\\).substring\\(0,80\\);console.log\\(k,'''':'''',t,''''→'''',preview\\)}\\)}\\)\")",
+      "Bash(curl -s \"https://20.110.72.120.nip.io/webhook/get-deadlines/importantInfo/01CF47VN2L6SEJ5LNC65AZS27LFB45J3Q6\")"
     ]
   }
 }
