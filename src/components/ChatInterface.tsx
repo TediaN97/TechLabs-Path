@@ -398,6 +398,32 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 /** Max height in px before the textarea becomes internally scrollable (~7 lines) */
 const TEXTAREA_MAX_HEIGHT = 200;
 
+// ── Example prompt suggestions ──────────────────────────────────────────────────
+
+const EXAMPLE_PROMPTS = [
+  "Extract borrowers and lenders from the document",
+  "Find contracts missing insurance requirements",
+  "Show documents with defined extension rights",
+  "List agreements with guarantors",
+  "Extract loan purpose from all documents",
+  "Find missing reporting requirements",
+  "Summarize key terms of this agreement",
+  "Find documents with missing approvals",
+  "List contracts with events of default",
+  "Check which fields are incomplete",
+];
+
+/** Number of prompt chips visible at once */
+const VISIBLE_PROMPTS = 4;
+/** Rotation interval in ms */
+const ROTATION_INTERVAL_MS = 5_000;
+
+/** Pick `count` unique random prompts from EXAMPLE_PROMPTS */
+function pickInitialPrompts(count: number): string[] {
+  const shuffled = [...EXAMPLE_PROMPTS].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
 // ── Component ───────────────────────────────────────────────────────────────────
 
 interface ChatInterfaceProps {
@@ -423,6 +449,40 @@ export default function ChatInterface({
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputValueRef = useRef("");
   const [structuredFile, setStructuredFile] = useState<File | null>(null);
+
+  // ── Rotating prompt suggestions (single-item replacement) ──────────────────
+  const [visiblePrompts, setVisiblePrompts] = useState(() => pickInitialPrompts(VISIBLE_PROMPTS));
+  const hoveredRef = useRef(false);
+
+  useEffect(() => {
+    // Only rotate when the empty state is visible
+    if (messages.length > 0 || isLoading) return;
+    const id = setInterval(() => {
+      if (hoveredRef.current) return; // pause while hovering
+      setVisiblePrompts((prev) => {
+        // Pick a random slot to replace
+        const slotIdx = Math.floor(Math.random() * prev.length);
+        // Pick a replacement that isn't already visible
+        const candidates = EXAMPLE_PROMPTS.filter((p) => !prev.includes(p));
+        if (candidates.length === 0) return prev;
+        const replacement = candidates[Math.floor(Math.random() * candidates.length)];
+        const next = [...prev];
+        next[slotIdx] = replacement;
+        return next;
+      });
+    }, ROTATION_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [messages.length, isLoading]);
+
+  function handlePromptClick(text: string) {
+    inputValueRef.current = text;
+    if (textareaRef.current) {
+      // Set value via native setter so React picks it up
+      textareaRef.current.value = text;
+      textareaRef.current.focus();
+      resizeTextarea();
+    }
+  }
 
   // ── Auto-resize textarea to fit content ──────────────────────────────────
   const resizeTextarea = useCallback(() => {
@@ -508,8 +568,24 @@ export default function ChatInterface({
         className="flex-1 overflow-y-auto px-5 py-4 bg-gray-50/50 min-h-0"
       >
         {messages.length === 0 && !isLoading && (
-          <div className="flex items-center justify-center h-full text-sm text-gray-400">
-            Send a message to start the conversation.
+          <div className="flex flex-col items-center justify-center h-full gap-4">
+            <p className="text-sm text-gray-400">Ask questions about your documents</p>
+            <div
+              className="flex flex-wrap justify-center gap-2 max-w-lg"
+              onMouseEnter={() => { hoveredRef.current = true; }}
+              onMouseLeave={() => { hoveredRef.current = false; }}
+            >
+              {visiblePrompts.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  onClick={() => handlePromptClick(prompt)}
+                  className="px-3 py-1.5 text-xs text-[#6556d2] bg-[#6556d2]/5 border border-[#6556d2]/20 rounded-full hover:bg-[#6556d2]/10 hover:border-[#6556d2]/40 transition-colors cursor-pointer leading-snug animate-[fadeIn_300ms_ease-out]"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
