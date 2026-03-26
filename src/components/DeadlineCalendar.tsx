@@ -438,7 +438,15 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                               {cell.day}
                             </span>
                               {indicatorSeverity && !cell.isToday && (
-                                <DeadlineSeverityIndicator severity={indicatorSeverity} />
+                                <DeadlineSeverityIndicator
+                                  severity={indicatorSeverity}
+                                  items={dayData?.items.map((i) => ({
+                                    fileName: i.fileName,
+                                    description: i.description,
+                                    sectionTitle: i.sectionTitle,
+                                    severity: i.severity,
+                                  }))}
+                                />
                             )}
                           </div>
 
