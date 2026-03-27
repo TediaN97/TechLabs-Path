@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/TPLabs/TechLabs-Path/**)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}

@@ -60,11 +60,18 @@ function severityTextColor(severity: DeadlineSeverity): string {
 
 function severityLabel(severity: DeadlineSeverity): string {
   switch (severity) {
-    case "critical": return "Critical Reminder";
-    case "warning":  return "Standard Reminder";
-    case "future":   return "Future Reminder";
+    case "critical": return "Critical reminder";
+    case "warning":  return "Warning reminder";
+    case "future":   return "Future reminder";
     case "past":     return "Past";
   }
+}
+
+/**
+ * Get a display label for a calendar item, preferring the reminderLabel if present.
+ */
+function itemDisplayLabel(item: CalendarDeadlineItem): string {
+  return item.reminderLabel ?? severityLabel(item.severity);
 }
 
 /** Priority ordering for severity levels (lower = more urgent). */
@@ -494,15 +501,15 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                   <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 mt-3 px-1 py-2 bg-gray-50/60 rounded-lg border border-gray-100">
                     <div className="flex items-center gap-1.5">
                       <span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500" />
-                        <span className="text-[10px] text-gray-600 font-medium">Critical Reminder <span className="text-gray-400">(&lt; 2 days)</span></span>
+                        <span className="text-[10px] text-gray-600 font-medium">Critical reminder <span className="text-gray-400">(deadline date)</span></span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-400" />
-                        <span className="text-[10px] text-gray-600 font-medium">Warning Reminder<span className="text-gray-400">(2–10 days)</span></span>
+                        <span className="text-[10px] text-gray-600 font-medium">Warning reminder <span className="text-gray-400">(7 days before)</span></span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="inline-block h-2.5 w-2.5 rounded-sm bg-blue-500" />
-                        <span className="text-[10px] text-gray-600 font-medium">Future Reminder<span className="text-gray-400">(&gt; 10 days)</span></span>
+                        <span className="text-[10px] text-gray-600 font-medium">Future reminder <span className="text-gray-400">(30 days before)</span></span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="inline-block h-2.5 w-2.5 rounded-sm bg-gray-400" />
@@ -578,8 +585,11 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                                   {item.dateRaw && (
                                     <span>Date: {item.dateRaw}</span>
                                   )}
+                                  {item.originalDeadlineDate && item.reminderType !== "critical" && (
+                                    <span>Deadline: {item.originalDeadlineDate}</span>
+                                  )}
                                   <span className={`font-semibold ${severityTextColor(item.severity)}`}>
-                                    {severityLabel(item.severity)}
+                                    {itemDisplayLabel(item)}
                                   </span>
                                 </div>
                               </div>
