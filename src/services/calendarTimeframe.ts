@@ -29,6 +29,8 @@ export interface ViewMonth {
 
 export type DeadlineSeverity = "critical" | "warning" | "future" | "past";
 
+export type ReminderType = "critical" | "warning" | "future";
+
 export interface CalendarDeadlineItem {
   fileName: string;
   sectionTitle: string | null;
@@ -37,6 +39,12 @@ export interface CalendarDeadlineItem {
   description: string | null;
   documentDescription: string | null;
   severity: DeadlineSeverity;
+  /** If this item was generated as a deadline reminder, indicates its type */
+  reminderType?: ReminderType;
+  /** The original deadline date this reminder was derived from */
+  originalDeadlineDate?: string;
+  /** Display label for the reminder */
+  reminderLabel?: string;
 }
 
 export interface CalendarDayData {
@@ -184,11 +192,187 @@ export function getDeadlineSeverity(
   return "future";
 }
 
+// ── Expanded Timeframe Range ──────────────────────────────────────────────────
+
+/**
+ * Compute the expanded calendar timeframe for API fetching.
+ *
+ * Returns:
+ *   - start_date = 1st of the previous month
+ *   - end_date   = last day of the next month
+ *
+ * The range is expanded in both directions so that:
+ *   - Deadlines up to 30 days ahead have their warning/future reminders
+ *     visible in the current month (forward expansion)
+ *   - Deadlines in the previous month can still show their critical
+ *     reminders if the user navigates back (backward expansion)
+ *
+ * @example
+ *   getCalendarTimeframeRange({ year: 2026, month: 2 }) // March 2026
+ *   // → { startDate: "2026-02-01", endDate: "2026-04-30" }
+ */
+export function getCalendarTimeframeRange(viewMonth: ViewMonth): MonthTimeframe {
+  const { year, month } = viewMonth;
+
+  // Previous month: 1st day
+  let prevYear = year;
+  let prevMonth = month - 1;
+  if (prevMonth < 0) {
+    prevMonth = 11;
+    prevYear -= 1;
+  }
+  const startDate = formatDateISO(new Date(prevYear, prevMonth, 1));
+
+  // Next month: last day
+  let nextYear = year;
+  let nextMonth = month + 1;
+  if (nextMonth > 11) {
+    nextMonth = 0;
+    nextYear += 1;
+  }
+  const endDate = formatDateISO(
+    new Date(nextYear, nextMonth, getDaysInMonth(nextYear, nextMonth))
+  );
+
+  return { startDate, endDate };
+}
+
+// ── Deadline Reminder Generation ─────────────────────────────────────────────
+
+/**
+ * Color mapping for reminder types (used by UI for styling).
+ */
+export const REMINDER_COLORS: Record<ReminderType, string> = {
+  critical: "red",
+  warning: "yellow",
+  future: "blue",
+};
+
+/**
+ * Reminder configuration: type → { daysBeforeDeadline, label, severity }.
+ */
+const REMINDER_CONFIG: {
+  type: ReminderType;
+  daysBefore: number;
+  label: string;
+  severity: DeadlineSeverity;
+}[] = [
+  { type: "critical", daysBefore: 0,  label: "Critical reminder", severity: "critical" },
+  { type: "warning",  daysBefore: 7,  label: "Warning reminder",  severity: "warning"  },
+  { type: "future",   daysBefore: 30, label: "Future reminder",   severity: "future"   },
+];
+
+/**
+ * Subtract a number of days from an ISO date string, returning a new ISO string.
+ * Uses UTC arithmetic to avoid timezone drift. Does NOT mutate any Date objects.
+ */
+function subtractDaysISO(dateISO: string, days: number): string {
+  const [y, m, d] = dateISO.split("-").map(Number);
+  const utc = new Date(Date.UTC(y, m - 1, d));
+  // Create a new Date for the subtracted value (no mutation)
+  const result = new Date(utc.getTime() - days * MS_PER_DAY);
+  const ry = result.getUTCFullYear();
+  const rm = String(result.getUTCMonth() + 1).padStart(2, "0");
+  const rd = String(result.getUTCDate()).padStart(2, "0");
+  return `${ry}-${rm}-${rd}`;
+}
+
+/**
+ * Generate 3 deadline reminder events for a single deadline item.
+ *
+ * For each deadline, produces:
+ *   1. Critical reminder — on the exact deadline date (RED)
+ *   2. Warning reminder  — 7 days before the deadline (YELLOW)
+ *   3. Future reminder   — 30 days before the deadline (BLUE)
+ *
+ * Returns an array of { dateKey, item } tuples, where dateKey is the
+ * calendar date where the reminder should be placed.
+ *
+ * Design: original data is never mutated — each reminder is a fresh object.
+ *
+ * Edge case behavior: reminders whose dates fall in the past are still
+ * generated. The caller (or the calendar grid) decides whether to display them.
+ * This keeps the function pure and predictable.
+ */
+export function generateDeadlineReminders(
+  item: CalendarDeadlineItem,
+  deadlineDateKey: string
+): { dateKey: string; item: CalendarDeadlineItem }[] {
+  // Guard: skip if the deadline date is invalid
+  if (!deadlineDateKey || deadlineDateKey.split("-").length !== 3) {
+    return [];
+  }
+
+  return REMINDER_CONFIG.map(({ type, daysBefore, label, severity }) => {
+    const reminderDate = subtractDaysISO(deadlineDateKey, daysBefore);
+
+    return {
+      dateKey: reminderDate,
+      item: {
+        // Spread creates a fresh copy — no mutation of the original
+        ...item,
+        dateParsed: reminderDate,
+        severity,
+        reminderType: type,
+        originalDeadlineDate: deadlineDateKey,
+        reminderLabel: label,
+      },
+    };
+  });
+}
+
 // ── Response Normalization ─────────────────────────────────────────────────────
 
 /**
+ * Helper to add a reminder item into the deadline map at the given dateKey.
+ * Creates the CalendarDayData entry if it doesn't exist; appends otherwise.
+ * Deduplicates by checking (fileName + reminderType + originalDeadlineDate).
+ */
+function addReminderToMap(
+  map: CalendarDeadlineMap,
+  dateKey: string,
+  item: CalendarDeadlineItem
+): void {
+  if (!map[dateKey]) {
+    map[dateKey] = {
+      date: dateKey,
+      count: 0,
+      documentsAffected: [],
+      items: [],
+    };
+  }
+
+  const entry = map[dateKey];
+
+  // Deduplicate: skip if an identical reminder already exists
+  const isDuplicate = entry.items.some(
+    (existing) =>
+      existing.fileName === item.fileName &&
+      existing.reminderType === item.reminderType &&
+      existing.originalDeadlineDate === item.originalDeadlineDate
+  );
+  if (isDuplicate) return;
+
+  entry.items.push(item);
+  entry.count = entry.items.length;
+
+  // Update documentsAffected (unique file names)
+  if (!entry.documentsAffected.includes(item.fileName)) {
+    entry.documentsAffected.push(item.fileName);
+  }
+}
+
+/**
  * Transform the raw API calendar entries into a date-keyed lookup map.
- * Each item gets a pre-computed severity based on the API's `today` value.
+ *
+ * For each deadline item, generates 3 reminder events:
+ *   - Critical reminder (on the deadline date, RED)
+ *   - Warning reminder  (7 days before, YELLOW)
+ *   - Future reminder   (30 days before, BLUE)
+ *
+ * Reminders are placed in the map at their calculated dates.
+ * Original data is never mutated — all items are fresh copies.
+ * Duplicate reminders are skipped if the function runs multiple times.
  */
 export function normalizeCalendarResponse(
   calendarEntries: ApiCalendarEntry[],
@@ -197,24 +381,26 @@ export function normalizeCalendarResponse(
   const map: CalendarDeadlineMap = {};
 
   for (const entry of calendarEntries) {
-    const dateKey = entry.date;
+    const deadlineDateKey = entry.date;
 
-    const items: CalendarDeadlineItem[] = entry.items.map((item) => ({
+    // Create base items from the API response
+    const baseItems: CalendarDeadlineItem[] = entry.items.map((item) => ({
       fileName: item.file_name,
       sectionTitle: item.section_title,
       dateParsed: item.date_parsed,
       dateRaw: item.date_raw,
       description: item.description,
       documentDescription: item.document_description,
-      severity: getDeadlineSeverity(item.date_parsed || dateKey, todayISO),
+      severity: getDeadlineSeverity(item.date_parsed || deadlineDateKey, todayISO),
     }));
 
-    map[dateKey] = {
-      date: dateKey,
-      count: entry.count,
-      documentsAffected: entry.documents_affected,
-      items,
-    };
+    // For each base item, generate 3 reminder events at their respective dates
+    for (const baseItem of baseItems) {
+      const reminders = generateDeadlineReminders(baseItem, deadlineDateKey);
+      for (const { dateKey, item: reminderItem } of reminders) {
+        addReminderToMap(map, dateKey, reminderItem);
+      }
+    }
   }
 
   return map;

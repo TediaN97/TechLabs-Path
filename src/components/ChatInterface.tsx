@@ -91,7 +91,7 @@ function ThinkingIndicator({ showImmediately }: { showImmediately: boolean }) {
           break;
         }
       }
-    }, 10000);
+    }, 1000);
 
     // Also check once early for the visibility trigger (short prompts)
     const earlyId = !showImmediately ? setTimeout(() => {
@@ -129,8 +129,6 @@ function ThinkingIndicator({ showImmediately }: { showImmediately: boolean }) {
     </div>
   );
 }
-
-// ── Upload progress indicator ─────────────────────────────────────────────────
 
 // ── Upload progress indicator ─────────────────────────────────────────────────
 
@@ -173,7 +171,7 @@ function UploadProgressBubble({ fileName }: { fileName: string }) {
         }
         return newStep;
       });
-    }, 10000);
+    }, 1000);
     return () => clearInterval(id);
   }, []);
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
-  getMonthTimeframe,
+  getCalendarTimeframeRange,
   buildTimeframeUrl,
   timeframesEqual,
   normalizeCalendarResponse,
@@ -93,8 +93,13 @@ export function useCalendarTimeframe(
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasFetchedOnce = useRef(false);
 
+  // Use expanded range: start_date = 1st of previous month, end_date = last of current month.
+  // This ensures we fetch deadlines whose warning/future reminders may fall in the visible month.
   const timeframe = useMemo(
-    () => getMonthTimeframe(viewMonth),
+    () => getCalendarTimeframeRange({
+      year: viewMonth.year,
+      month: viewMonth.month,
+    }),
     [viewMonth.year, viewMonth.month]
   );
 
