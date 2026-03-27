@@ -511,10 +511,6 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
                       <span className="inline-block h-2.5 w-2.5 rounded-sm bg-blue-500" />
                         <span className="text-[10px] text-gray-600 font-medium">Future reminder <span className="text-gray-400">(30 days before)</span></span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-gray-400" />
-                        <span className="text-[10px] text-gray-600 font-medium">Past <span className="text-gray-400">(overdue)</span></span>
-                    </div>
                   </div>
                 </>
               )}
