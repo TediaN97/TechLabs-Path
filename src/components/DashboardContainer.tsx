@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useAgent } from "../hooks/useAgent";
-import type { Trigger, ExportFile, Milestone } from "../hooks/useAgent";
+import type { Trigger, ExportTemplate, Milestone } from "../hooks/useAgent";
 import ChatInterface from "./ChatInterface";
 import StructuralDataLookup from "./StructuralDataLookup";
 import DeadlineCalendar from "./DeadlineCalendar";
@@ -20,6 +20,15 @@ function DownloadIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" />
+    </svg>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <polyline points="23 4 23 10 17 10" />
+      <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
     </svg>
   );
 }
@@ -366,9 +375,15 @@ function TriggersPanel({
 // ── Exports Panel ──────────────────────────────────────────────────────────────
 
 function ExportsPanel({
-  exportFiles,
+  exportTemplates,
+  isLoading,
+  onDownload,
+  onReload,
 }: {
-  exportFiles: ExportFile[];
+  exportTemplates: ExportTemplate[];
+  isLoading: boolean;
+  onDownload: (editedFileId: string, filename: string) => void;
+  onReload: (prompt: string, sourceFileId: string, fileName: string) => void;
 }) {
   return (
     <div className="bg-white shadow-sm rounded-lg">
@@ -379,28 +394,48 @@ function ExportsPanel({
         </div>
       </div>
 
-      {exportFiles.length === 0 ? (
+      {isLoading ? (
+        <div className="px-5 py-8 flex items-center justify-center gap-2 text-sm text-gray-400">
+          <SpinnerIcon className="h-3.5 w-3.5" />
+          Loading exports…
+        </div>
+      ) : exportTemplates.length === 0 ? (
         <div className="px-5 py-5 text-center text-sm text-gray-400">
           No exports yet.
         </div>
       ) : (
-        <ul className="divide-y divide-gray-50 max-h-60 overflow-y-auto">
-          {exportFiles.map((f) => (
-            <li key={f.id} className="px-5 py-2.5 flex items-center justify-between">
-              <div className="min-w-0">
-                <p className="text-xs text-gray-700 font-medium truncate">{f.filename}</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">
-                  {f.record_count > 0 && <>{f.record_count} records &middot; </>}
-                  {formatTimestamp(f.created_at)}
-                </p>
-              </div>
-              <a
-                href={f.blob_url}
-                download={f.filename}
-                className="flex-shrink-0 px-3 py-1 text-xs font-medium text-[#6556d2] border border-[#6556d2]/30 rounded-md hover:bg-[#6556d2]/5 active:bg-[#6556d2]/10 transition-colors cursor-pointer"
+        <ul className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
+          {exportTemplates.map((t, idx) => (
+            <li key={`tpl-${idx}`} className="px-5 py-2.5">
+              <p
+                className="text-xs text-gray-700 font-medium break-words line-clamp-2"
+                title={t.filename}
               >
-                Download
-              </a>
+                {t.filename}
+              </p>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <button
+                  onClick={() => onReload(t.prompt, t.source_file, t.filename)}
+                  title="Reload prompt into chat"
+                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-[#6556d2] border border-[#6556d2]/30 rounded-md hover:bg-[#6556d2]/5 active:bg-[#6556d2]/10 transition-colors cursor-pointer"
+                >
+                  <RefreshIcon />
+                  Reload
+                </button>
+                <button
+                  onClick={() => onDownload(t.edited_file, t.filename)}
+                  title="Download file"
+                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-[#6556d2] border border-[#6556d2]/30 rounded-md hover:bg-[#6556d2]/5 active:bg-[#6556d2]/10 transition-colors cursor-pointer"
+                >
+                  <DownloadIcon />
+                  Download
+                </button>
+              </div>
+              {t.created_at && (
+                <p className="text-[10px] text-gray-400 mt-1">
+                  {formatTimestamp(t.created_at)}
+                </p>
+              )}
             </li>
           ))}
         </ul>
@@ -414,6 +449,26 @@ function ExportsPanel({
 export default function DashboardContainer() {
   const agent = useAgent();
   const isLoading = agent.isProcessing || agent.isExporting || agent.isUploading;
+
+  // ── Reload mode: pending input for chat ────────────────────────────────────
+  const [pendingInput, setPendingInput] = useState<string | null>(null);
+
+  const handleReload = useCallback(
+    (prompt: string, sourceFileId: string, fileName: string) => {
+      agent.handleExportReload(prompt, sourceFileId, fileName);
+      setPendingInput(prompt);
+    },
+    [agent.handleExportReload]
+  );
+
+  const handlePendingInputConsumed = useCallback(() => {
+    setPendingInput(null);
+  }, []);
+
+  const handleCancelReload = useCallback(() => {
+    agent.clearReloadMode();
+    setPendingInput(null);
+  }, [agent.clearReloadMode]);
 
   // ── Calendar → StructuralDataLookup modal bridge ──────────────────────────
   const [calendarAction, setCalendarAction] = useState<{
@@ -470,6 +525,11 @@ export default function DashboardContainer() {
               isLoading={agent.isProcessing}
               isUploading={agent.isUploading}
               uploadingFileName={agent.uploadingFileName}
+              pendingInput={pendingInput}
+              onPendingInputConsumed={handlePendingInputConsumed}
+              isReloadMode={agent.reloadMode.active}
+              reloadFileName={agent.reloadMode.fileName}
+              onCancelReload={handleCancelReload}
             />
             <StructuralDataLookup
               data={agent.data}
@@ -497,7 +557,10 @@ export default function DashboardContainer() {
               onDelete={agent.deleteTrigger}
             />
             <ExportsPanel
-              exportFiles={agent.exports}
+              exportTemplates={agent.exportTemplates}
+              isLoading={agent.isExportTemplatesLoading}
+              onDownload={agent.handleExportDownload}
+              onReload={handleReload}
             />
           </div>
         </div>

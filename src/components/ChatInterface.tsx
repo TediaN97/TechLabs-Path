@@ -431,6 +431,16 @@ interface ChatInterfaceProps {
   isLoading: boolean;
   isUploading?: boolean;
   uploadingFileName?: string;
+  /** When set, populates the chat input with this value (for reload mode) */
+  pendingInput?: string | null;
+  /** Called after the pending input has been consumed */
+  onPendingInputConsumed?: () => void;
+  /** Whether reload mode is active (shows indicator) */
+  isReloadMode?: boolean;
+  /** Name of the file being updated in reload mode */
+  reloadFileName?: string;
+  /** Called to cancel reload mode */
+  onCancelReload?: () => void;
 }
 
 export default function ChatInterface({
@@ -440,6 +450,11 @@ export default function ChatInterface({
   isLoading,
   isUploading = false,
   uploadingFileName = "",
+  pendingInput,
+  onPendingInputConsumed,
+  isReloadMode = false,
+  reloadFileName = "",
+  onCancelReload,
 }: ChatInterfaceProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -494,6 +509,21 @@ export default function ChatInterface({
     // Enable internal scroll once content overflows max height
     el.style.overflowY = el.scrollHeight > TEXTAREA_MAX_HEIGHT ? "auto" : "hidden";
   }, []);
+
+  // ── Handle external pending input (reload mode) ───────────────────────────
+  useEffect(() => {
+    if (pendingInput != null && pendingInput !== "") {
+      inputValueRef.current = pendingInput;
+      if (textareaRef.current) {
+        textareaRef.current.value = pendingInput;
+        textareaRef.current.focus();
+        textareaRef.current.selectionStart = pendingInput.length;
+        textareaRef.current.selectionEnd = pendingInput.length;
+      }
+      resizeTextarea();
+      onPendingInputConsumed?.();
+    }
+  }, [pendingInput, onPendingInputConsumed, resizeTextarea]);
 
   // Auto-scroll chat to bottom when messages change or loading/uploading state changes
   useEffect(() => {
@@ -605,6 +635,27 @@ export default function ChatInterface({
 
       {/* Input bar — pinned to bottom, grows upward */}
       <div className="border-t border-gray-100 px-4 py-3 flex-shrink-0">
+        {/* Reload mode indicator */}
+        {isReloadMode && (
+          <div className="flex items-center gap-2 mb-2 px-1 py-1.5 bg-[#6556d2]/5 border border-[#6556d2]/20 rounded-md">
+            <svg className="h-3.5 w-3.5 text-[#6556d2] flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
+            </svg>
+            <span className="text-[11px] text-[#6556d2] font-medium flex-1 truncate">
+              Reload mode — updating: <span className="font-semibold">{reloadFileName || "document"}</span>. Edit the prompt and send.
+            </span>
+            <button
+              type="button"
+              onClick={onCancelReload}
+              className="text-gray-400 hover:text-red-500 text-xs font-bold leading-none cursor-pointer"
+              title="Cancel reload"
+            >
+              &times;
+            </button>
+          </div>
+        )}
+
         {/* Attached structured file indicator */}
         {structuredFile && (
           <div className="flex items-center gap-2 mb-2 px-1">

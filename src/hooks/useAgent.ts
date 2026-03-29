@@ -70,6 +70,14 @@ export interface ExportFile {
   blob_url: string;
 }
 
+export interface ExportTemplate {
+  filename: string;
+  prompt: string;
+  source_file: string;
+  edited_file: string;
+  created_at: string;
+}
+
 // ── API response types ─────────────────────────────────────────────────────────
 
 interface ApiDeadlineEntry {
@@ -224,6 +232,14 @@ const DELETE_FILE_URL =
 /** Production API endpoint for fetching triggers */
 const TRIGGERS_URL =
   "https://20.110.72.120.nip.io/webhook/triggers";
+
+/** Fetch all export template documents */
+const EXPORT_TEMPLATES_URL =
+  "https://20.110.72.120.nip.io/webhook/chat_with_doc_getall";
+
+/** Download an export file by OneDrive file_id */
+const DOWNLOAD_FILE_URL =
+  "https://20.110.72.120.nip.io/webhook/download-file/downloadFile";
 
 /** Calendar timeframe endpoint (used by useCalendarTimeframe hook) */
 export const CALENDAR_TIMEFRAME_URL =
@@ -605,6 +621,105 @@ async function deleteTriggerApi(id: string): Promise<boolean> {
   }
 }
 
+/**
+ * POST to fetch all export template documents.
+ */
+async function fetchExportTemplates(): Promise<ExportTemplate[] | null> {
+  try {
+    const res = await fetch(EXPORT_TEMPLATES_URL, { method: "POST" });
+    if (!res.ok) return null;
+    const text = await res.text();
+    if (!text || text.trim().length === 0) return null;
+    const json = JSON.parse(text);
+    // Response may be { data: [...] } or a bare array
+    const items = json?.data ?? json;
+    const raw: Record<string, unknown>[] = Array.isArray(items) ? items : [items];
+    return raw.map((t) => ({
+      filename: (t.filename as string) || (t.name as string) || "Untitled",
+      prompt: (t.prompt as string) || "",
+      // API has a typo: "souce_file" (missing 'r') — handle both spellings
+      source_file: (t.source_file as string) || (t.souce_file as string) || "",
+      edited_file: (t.edited_file as string) || "",
+      created_at: (t.created_at as string) || "",
+    }));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Download an export file using its OneDrive file_id (edited_file).
+ * Uses GET with a JSON body containing { file_id }.
+ */
+async function downloadExportFile(fileId: string, filename: string): Promise<void> {
+  try {
+    const url = `${DOWNLOAD_FILE_URL}/${encodeURIComponent(fileId)}`;
+    const res = await fetch(url, { method: "GET" });
+    if (!res.ok) {
+      throw new Error(`Download failed (HTTP ${res.status})`);
+    }
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename || "export-file";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    console.error("[Download] failed:", err);
+    alert(err instanceof Error ? err.message : "Download failed. Please try again.");
+  }
+}
+
+/**
+ * POST to chat_with_doc in reload/update mode (no file, uses file_id instead).
+ */
+async function sendChatWithDocReload(
+  message: string,
+  sourceFileId: string
+): Promise<ChatWithDocResult | null> {
+  try {
+    const sessionId = getOrCreateSessionId();
+    const formData = new FormData();
+    formData.append("message", message);
+    formData.append("file_id", sourceFileId);
+    formData.append("session_id", sessionId);
+
+    const res = await fetch(CHAT_WITH_DOC_URL, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      console.warn("[ChatWithDocReload] n8n returned HTTP", res.status);
+      return null;
+    }
+
+    const contentType = (res.headers.get("Content-Type") || "").toLowerCase();
+    const isFileResponse = FILE_CONTENT_TYPES.some((ft) =>
+      contentType.includes(ft)
+    );
+
+    if (isFileResponse) {
+      const blob = await res.blob();
+      const dispositionName = parseContentDispositionFilename(
+        res.headers.get("Content-Disposition")
+      );
+      const fileName = dispositionName || generateFallbackFilename(contentType);
+      return { kind: "file", file: { blob, fileName, mimeType: contentType } };
+    }
+
+    const text = await res.text();
+    if (!text || text.trim().length === 0) return null;
+    const json = JSON.parse(text);
+    return { kind: "json", json: Array.isArray(json) ? json : [json] };
+  } catch (err) {
+    console.error("[ChatWithDocReload] request failed:", err);
+    return null;
+  }
+}
+
 export function deriveStatus(deadline: string, explicit?: MilestoneStatus): MilestoneStatus {
   if (explicit) return explicit;
   const d = new Date(deadline + "T23:59:59");
@@ -713,6 +828,13 @@ export function useAgent() {
   const [previewMilestone, setPreviewMilestone] = useState<Milestone | null>(null);
   const [triggers, setTriggers] = useState<Trigger[]>([]);
   const [isTriggersLoading, setIsTriggersLoading] = useState(true);
+  const [exportTemplates, setExportTemplates] = useState<ExportTemplate[]>([]);
+  const [isExportTemplatesLoading, setIsExportTemplatesLoading] = useState(true);
+  const [reloadMode, setReloadMode] = useState<{
+    active: boolean;
+    sourceFileId: string;
+    fileName: string;
+  }>({ active: false, sourceFileId: "", fileName: "" });
 
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const triggersTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -794,6 +916,33 @@ export function useAgent() {
     };
   }, [refreshTriggers]);
 
+  // ── refreshExportTemplates: fetch export templates (no polling) ──────
+
+  const refreshExportTemplates = useCallback(async () => {
+    setIsExportTemplatesLoading(true);
+    try {
+      const res = await fetchExportTemplates();
+      if (res) {
+        const sorted = [...res].sort((a, b) => {
+          const da = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const db = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return db - da; // newest first
+        });
+        setExportTemplates(sorted);
+      }
+    } catch {
+      // silently ignore
+    } finally {
+      setIsExportTemplatesLoading(false);
+    }
+  }, []);
+
+  // ── Initial export templates fetch (once on mount) ──────────────────
+
+  useEffect(() => {
+    refreshExportTemplates();
+  }, [refreshExportTemplates]);
+
   // ── Cleanup blob URLs on unmount to prevent memory leaks ──────────────
   useEffect(() => {
     return () => {
@@ -837,25 +986,57 @@ export function useAgent() {
       setIsProcessing(true);
 
       try {
-        // 2. Route to the appropriate webhook based on file attachment
-        if (structuredFile) {
+        // 2. Route to the appropriate webhook based on file attachment or reload mode
+        const isReload = reloadMode.active && reloadMode.sourceFileId;
+        if (isReload) {
+          // ── Reload/update path: chat_with_doc without file ──────
+          const docResult = await sendChatWithDocReload(text, reloadMode.sourceFileId);
+
+          if (docResult?.kind === "file" && docResult.file) {
+            const { fileName, mimeType } = docResult.file;
+            const assistantMsg: ChatMessage = {
+              id: uid(),
+              role: "assistant",
+              content: `Export updated: **${fileName}** (${mimeType.split(";")[0]})\nThe file is available in the Export templates panel.`,
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            logExecution(`Export updated: ${fileName}`);
+            // Success — clear reload mode and refresh templates from server
+            setReloadMode({ active: false, sourceFileId: "", fileName: "" });
+            await refreshExportTemplates();
+          } else if (docResult?.kind === "json" && docResult.json) {
+            const assistantContent = extractAssistantReply(docResult.json);
+            const replyText = assistantContent || "I've processed your update request.";
+            const assistantMsg: ChatMessage = {
+              id: uid(),
+              role: "assistant",
+              content: replyText,
+              rawJson: docResult.json,
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            logExecution("AI agent responded (reload)");
+            if (replyIndicatesDataChange(replyText)) {
+              await refreshData();
+            }
+            // Success — clear reload mode and refresh templates
+            setReloadMode({ active: false, sourceFileId: "", fileName: "" });
+            await refreshExportTemplates();
+          } else {
+            // Failed — keep reload mode active so user can retry
+            const fallbackMsg: ChatMessage = {
+              id: uid(),
+              role: "assistant",
+              content: "I received your message but the AI service is currently unavailable. Please try again shortly.",
+            };
+            setMessages((prev) => [...prev, fallbackMsg]);
+          }
+        } else if (structuredFile) {
           // ── chat_with_doc path (may return file OR JSON) ──────────
           const docResult = await sendChatWithDoc(text, structuredFile);
 
           if (docResult?.kind === "file" && docResult.file) {
-            // Backend returned a generated file — surface as export
-            const { blob, fileName, mimeType } = docResult.file;
-            const blobUrl = URL.createObjectURL(blob);
-
-            const exportFile: ExportFile = {
-              id: uid(),
-              filename: fileName,
-              created_at: now(),
-              record_count: 0, // file response — row count unknown
-              blob_url: blobUrl,
-            };
-            setExports((prev) => [exportFile, ...prev]);
-
+            // Backend returned a generated file
+            const { fileName, mimeType } = docResult.file;
             const assistantMsg: ChatMessage = {
               id: uid(),
               role: "assistant",
@@ -863,6 +1044,8 @@ export function useAgent() {
             };
             setMessages((prev) => [...prev, assistantMsg]);
             logExecution(`Export generated: ${fileName}`);
+            // Refresh export templates from server
+            await refreshExportTemplates();
           } else if (docResult?.kind === "json" && docResult.json) {
             // Normal JSON reply from chat_with_doc
             const assistantContent = extractAssistantReply(docResult.json);
@@ -880,6 +1063,8 @@ export function useAgent() {
             if (replyIndicatesDataChange(replyText)) {
               await refreshData();
             }
+            // Refresh export templates after successful chat_with_doc
+            await refreshExportTemplates();
           } else {
             // Null / error from chat_with_doc
             const fallbackMsg: ChatMessage = {
@@ -935,8 +1120,29 @@ export function useAgent() {
         setIsProcessing(false);
       }
     },
-    [logExecution, refreshData]
+    [logExecution, refreshData, refreshExportTemplates, reloadMode]
   );
+
+  // ── Export template actions ─────────────────────────────────────────────
+
+  const handleExportDownload = useCallback(
+    async (editedFileId: string, filename: string) => {
+      await downloadExportFile(editedFileId, filename);
+    },
+    []
+  );
+
+  const handleExportReload = useCallback(
+    (prompt: string, sourceFileId: string, fileName: string) => {
+      setReloadMode({ active: true, sourceFileId, fileName });
+      return prompt;
+    },
+    []
+  );
+
+  const clearReloadMode = useCallback(() => {
+    setReloadMode({ active: false, sourceFileId: "", fileName: "" });
+  }, []);
 
   // ── File upload handler (POST to production endpoint) ────────────────────
 
@@ -1117,6 +1323,9 @@ export function useAgent() {
     lastRefreshed,
     triggers,
     isTriggersLoading,
+    exportTemplates,
+    isExportTemplatesLoading,
+    reloadMode,
     detailMilestone,
     previewMilestone,
     setDetailMilestone,
@@ -1128,5 +1337,8 @@ export function useAgent() {
     deleteMilestone,
     updateTrigger,
     deleteTrigger,
+    handleExportDownload,
+    handleExportReload,
+    clearReloadMode,
   };
 }
