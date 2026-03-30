@@ -241,6 +241,14 @@ const EXPORT_TEMPLATES_URL =
 const DOWNLOAD_FILE_URL =
   "https://20.110.72.120.nip.io/webhook/download-file/downloadFile";
 
+/** Delete an export template document */
+const DELETE_EXPORT_TEMPLATE_URL =
+  "https://20.110.72.120.nip.io/webhook/chat-api/chat_with_doc_delete";
+
+/** Rename an export template document */
+const RENAME_EXPORT_TEMPLATE_URL =
+  "https://20.110.72.120.nip.io/webhook/chat_with_doc_edit_name";
+
 /** Calendar timeframe endpoint (used by useCalendarTimeframe hook) */
 export const CALENDAR_TIMEFRAME_URL =
   "https://20.110.72.120.nip.io/webhook/calendar/timeframe";
@@ -926,16 +934,15 @@ export function useAgent() {
     setIsExportTemplatesLoading(true);
     try {
       const res = await fetchExportTemplates();
-      if (res) {
-        const sorted = [...res].sort((a, b) => {
-          const da = a.created_at ? new Date(a.created_at).getTime() : 0;
-          const db = b.created_at ? new Date(b.created_at).getTime() : 0;
-          return db - da; // newest first
-        });
-        setExportTemplates(sorted);
-      }
+      const items = res ?? [];
+      const sorted = [...items].sort((a, b) => {
+        const da = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const db = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return db - da; // newest first
+      });
+      setExportTemplates(sorted);
     } catch {
-      // silently ignore
+      // silently ignore — keep current state on network error
     } finally {
       setIsExportTemplatesLoading(false);
     }
@@ -948,11 +955,8 @@ export function useAgent() {
   const refreshExportTemplatesAndHighlight = useCallback(async () => {
     const prev = exportSnapshotRef.current;
     const res = await fetchExportTemplates();
-    if (!res) {
-      setIsExportTemplatesLoading(false);
-      return;
-    }
-    const sorted = [...res].sort((a, b) => {
+    const items = res ?? [];
+    const sorted = [...items].sort((a, b) => {
       const da = a.created_at ? new Date(a.created_at).getTime() : 0;
       const db = b.created_at ? new Date(b.created_at).getTime() : 0;
       return db - da;
@@ -1214,6 +1218,49 @@ export function useAgent() {
     setReloadMode({ active: false, sourceFileId: "", fileName: "" });
   }, []);
 
+  const handleExportDelete = useCallback(
+    async (sourceFileId: string): Promise<boolean> => {
+      try {
+        const url = `${DELETE_EXPORT_TEMPLATE_URL}/${encodeURIComponent(sourceFileId)}`;
+        const res = await fetch(url, { method: "DELETE" });
+        if (!res.ok) {
+          throw new Error(`Delete failed (HTTP ${res.status})`);
+        }
+        await refreshExportTemplates();
+        logExecution("Export template deleted");
+        return true;
+      } catch (err) {
+        console.error("[DeleteExport] failed:", err);
+        alert(err instanceof Error ? err.message : "Failed to delete export template. Please try again.");
+        return false;
+      }
+    },
+    [refreshExportTemplates, logExecution]
+  );
+
+  const handleExportRename = useCallback(
+    async (sourceFileId: string, newName: string): Promise<boolean> => {
+      try {
+        const res = await fetch(RENAME_EXPORT_TEMPLATE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source_file: sourceFileId, new_name: newName }),
+        });
+        if (!res.ok) {
+          throw new Error(`Rename failed (HTTP ${res.status})`);
+        }
+        await refreshExportTemplates();
+        logExecution(`Export template renamed to: ${newName}`);
+        return true;
+      } catch (err) {
+        console.error("[RenameExport] failed:", err);
+        alert(err instanceof Error ? err.message : "Failed to rename export template. Please try again.");
+        return false;
+      }
+    },
+    [refreshExportTemplates, logExecution]
+  );
+
   // ── File upload handler (POST to production endpoint) ────────────────────
 
   const handleFileUpload = useCallback(
@@ -1411,6 +1458,8 @@ export function useAgent() {
     deleteTrigger,
     handleExportDownload,
     handleExportReload,
+    handleExportDelete,
+    handleExportRename,
     clearReloadMode,
   };
 }
