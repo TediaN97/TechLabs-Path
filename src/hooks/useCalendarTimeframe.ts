@@ -79,7 +79,8 @@ export interface UseCalendarTimeframeResult {
 }
 
 export function useCalendarTimeframe(
-  viewMonth: ViewMonth
+  viewMonth: ViewMonth,
+  editedFile?: string
 ): UseCalendarTimeframeResult {
   const [deadlineMap, setDeadlineMap] = useState<CalendarDeadlineMap>({});
   const [serverToday, setServerToday] = useState(() => new Date().toISOString().slice(0, 10));
@@ -92,6 +93,7 @@ export function useCalendarTimeframe(
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasFetchedOnce = useRef(false);
+  const prevEditedFileRef = useRef(editedFile);
 
   // Use expanded range: start_date = 1st of previous month, end_date = last of current month.
   // This ensures we fetch deadlines whose warning/future reminders may fall in the visible month.
@@ -184,6 +186,18 @@ export function useCalendarTimeframe(
         setIsFetching(false);
       });
   }, [timeframe, applyResult]);
+
+  // Refetch when editedFile changes (new export created/updated)
+  useEffect(() => {
+    // Skip the initial render — only react to actual changes
+    if (prevEditedFileRef.current === editedFile) return;
+    prevEditedFileRef.current = editedFile;
+    if (!editedFile || !hasFetchedOnce.current) return;
+    
+    queueMicrotask(() => {
+      refetch();
+    });
+  }, [editedFile, refetch]);
 
   return {
     deadlineMap,

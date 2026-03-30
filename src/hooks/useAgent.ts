@@ -830,6 +830,8 @@ export function useAgent() {
   const [isTriggersLoading, setIsTriggersLoading] = useState(true);
   const [exportTemplates, setExportTemplates] = useState<ExportTemplate[]>([]);
   const [isExportTemplatesLoading, setIsExportTemplatesLoading] = useState(true);
+  const [isExportProcessing, setIsExportProcessing] = useState(false);
+  const [highlightedEditedFile, setHighlightedEditedFile] = useState<string | null>(null);
   const [reloadMode, setReloadMode] = useState<{
     active: boolean;
     sourceFileId: string;
@@ -840,6 +842,8 @@ export function useAgent() {
   const triggersTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasFetchedOnce = useRef(false);
   const hasFetchedTriggersOnce = useRef(false);
+  const exportSnapshotRef = useRef<ExportTemplate[]>([]);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const logExecution = useCallback((label: string) => {
     setExecutions((prev) => [
@@ -937,6 +941,63 @@ export function useAgent() {
     }
   }, []);
 
+  /**
+   * Refresh export templates and highlight the newly created or updated item.
+   * Compares the snapshot taken before submit with the fresh list.
+   */
+  const refreshExportTemplatesAndHighlight = useCallback(async () => {
+    const prev = exportSnapshotRef.current;
+    const res = await fetchExportTemplates();
+    if (!res) {
+      setIsExportTemplatesLoading(false);
+      return;
+    }
+    const sorted = [...res].sort((a, b) => {
+      const da = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const db = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return db - da;
+    });
+    setExportTemplates(sorted);
+    setIsExportTemplatesLoading(false);
+
+    // Detect the single changed item using edited_file ONLY.
+    // Build a map of previous edited_file → created_at for comparison.
+    const prevByEditedFile = new Map<string, string | undefined>();
+    for (const item of prev) {
+      if (item.edited_file) {
+        prevByEditedFile.set(item.edited_file, item.created_at);
+      }
+    }
+
+    let matchedEditedFile: string | null = null;
+
+    for (const item of sorted) {
+      if (!item.edited_file) continue;
+
+      if (!prevByEditedFile.has(item.edited_file)) {
+        // New item: edited_file didn't exist in previous snapshot
+        matchedEditedFile = item.edited_file;
+        break;
+      }
+
+      // Updated item: same edited_file but created_at changed
+      if (prevByEditedFile.get(item.edited_file) !== item.created_at) {
+        matchedEditedFile = item.edited_file;
+        break;
+      }
+    }
+
+    if (matchedEditedFile) {
+      // Clear any previous highlight timer
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      setHighlightedEditedFile(matchedEditedFile);
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightedEditedFile(null);
+        highlightTimerRef.current = null;
+      }, 2000);
+    }
+  }, []);
+
   // ── Initial export templates fetch (once on mount) ──────────────────
 
   useEffect(() => {
@@ -988,6 +1049,14 @@ export function useAgent() {
       try {
         // 2. Route to the appropriate webhook based on file attachment or reload mode
         const isReload = reloadMode.active && reloadMode.sourceFileId;
+        const isChatWithDoc = isReload || !!structuredFile;
+
+        // Snapshot current export templates and show processing state
+        if (isChatWithDoc) {
+          exportSnapshotRef.current = [...exportTemplates];
+          setIsExportProcessing(true);
+        }
+
         if (isReload) {
           // ── Reload/update path: chat_with_doc without file ──────
           const docResult = await sendChatWithDocReload(text, reloadMode.sourceFileId);
@@ -1003,7 +1072,7 @@ export function useAgent() {
             logExecution(`Export updated: ${fileName}`);
             // Success — clear reload mode and refresh templates from server
             setReloadMode({ active: false, sourceFileId: "", fileName: "" });
-            await refreshExportTemplates();
+            await refreshExportTemplatesAndHighlight();
           } else if (docResult?.kind === "json" && docResult.json) {
             const assistantContent = extractAssistantReply(docResult.json);
             const replyText = assistantContent || "I've processed your update request.";
@@ -1020,7 +1089,7 @@ export function useAgent() {
             }
             // Success — clear reload mode and refresh templates
             setReloadMode({ active: false, sourceFileId: "", fileName: "" });
-            await refreshExportTemplates();
+            await refreshExportTemplatesAndHighlight();
           } else {
             // Failed — keep reload mode active so user can retry
             const fallbackMsg: ChatMessage = {
@@ -1045,7 +1114,7 @@ export function useAgent() {
             setMessages((prev) => [...prev, assistantMsg]);
             logExecution(`Export generated: ${fileName}`);
             // Refresh export templates from server
-            await refreshExportTemplates();
+            await refreshExportTemplatesAndHighlight();
           } else if (docResult?.kind === "json" && docResult.json) {
             // Normal JSON reply from chat_with_doc
             const assistantContent = extractAssistantReply(docResult.json);
@@ -1064,7 +1133,7 @@ export function useAgent() {
               await refreshData();
             }
             // Refresh export templates after successful chat_with_doc
-            await refreshExportTemplates();
+            await refreshExportTemplatesAndHighlight();
           } else {
             // Null / error from chat_with_doc
             const fallbackMsg: ChatMessage = {
@@ -1118,9 +1187,10 @@ export function useAgent() {
         logExecution("Processing failed");
       } finally {
         setIsProcessing(false);
+        setIsExportProcessing(false);
       }
     },
-    [logExecution, refreshData, refreshExportTemplates, reloadMode]
+    [logExecution, refreshData, refreshExportTemplatesAndHighlight, reloadMode, exportTemplates]
   );
 
   // ── Export template actions ─────────────────────────────────────────────
@@ -1325,6 +1395,8 @@ export function useAgent() {
     isTriggersLoading,
     exportTemplates,
     isExportTemplatesLoading,
+    isExportProcessing,
+    highlightedEditedFile,
     reloadMode,
     detailMilestone,
     previewMilestone,

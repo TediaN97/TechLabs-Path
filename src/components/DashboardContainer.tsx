@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useAgent } from "../hooks/useAgent";
 import type { Trigger, ExportTemplate, Milestone } from "../hooks/useAgent";
 import ChatInterface from "./ChatInterface";
@@ -377,14 +377,24 @@ function TriggersPanel({
 function ExportsPanel({
   exportTemplates,
   isLoading,
+  isProcessing,
+  highlightedKey,
   onDownload,
   onReload,
 }: {
   exportTemplates: ExportTemplate[];
   isLoading: boolean;
+  isProcessing: boolean;
+  highlightedKey: string | null;
   onDownload: (editedFileId: string, filename: string) => void;
   onReload: (prompt: string, sourceFileId: string, fileName: string) => void;
 }) {
+  const isHighlighted = (t: ExportTemplate) => {
+    if (!highlightedKey) return false;
+    // Match ONLY by edited_file — guarantees at most one item highlighted
+    return t.edited_file === highlightedKey;
+  };
+
   return (
     <div className="bg-white shadow-sm rounded-lg">
       <div className="px-5 py-3.5 border-b border-gray-100">
@@ -393,6 +403,14 @@ function ExportsPanel({
           <h2 className="text-base font-semibold text-gray-800">Export templates</h2>
         </div>
       </div>
+
+      {/* Processing indicator */}
+      {isProcessing && (
+        <div className="px-5 py-2.5 flex items-center gap-2 text-xs text-[#6556d2] bg-[#6556d2]/5 border-b border-[#6556d2]/10">
+          <SpinnerIcon className="h-3 w-3" />
+          <span className="font-medium">Processing export template…</span>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="px-5 py-8 flex items-center justify-center gap-2 text-sm text-gray-400">
@@ -406,7 +424,14 @@ function ExportsPanel({
       ) : (
         <ul className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
           {exportTemplates.map((t, idx) => (
-            <li key={`tpl-${idx}`} className="px-5 py-2.5">
+            <li
+              key={`tpl-${idx}`}
+              className={`px-5 py-2.5 transition-colors duration-500 ${
+                isHighlighted(t)
+                  ? "bg-[#6556d2]/10 ring-1 ring-inset ring-[#6556d2]/20"
+                  : ""
+              }`}
+            >
               <p
                 className="text-xs text-gray-700 font-medium break-words line-clamp-2"
                 title={t.filename}
@@ -487,6 +512,12 @@ export default function DashboardContainer() {
     setCalendarAction(null);
   }, []);
 
+  // Derive latest edited_file — changes when exports are created/updated
+  const latestEditedFile = useMemo(
+    () => agent.exportTemplates[0]?.edited_file ?? "",
+    [agent.exportTemplates]
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -505,6 +536,7 @@ export default function DashboardContainer() {
             <DeadlineCalendar
               data={agent.data}
               onAction={handleCalendarAction}
+              editedFile={latestEditedFile}
             />
             <div className="h-8 w-8 rounded-full bg-[#6556d2] flex items-center justify-center text-white text-xs font-bold">
               TL
@@ -559,6 +591,8 @@ export default function DashboardContainer() {
             <ExportsPanel
               exportTemplates={agent.exportTemplates}
               isLoading={agent.isExportTemplatesLoading}
+              isProcessing={agent.isExportProcessing}
+              highlightedKey={agent.highlightedEditedFile}
               onDownload={agent.handleExportDownload}
               onReload={handleReload}
             />

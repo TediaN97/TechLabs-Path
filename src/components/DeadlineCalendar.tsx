@@ -169,11 +169,13 @@ export type CalendarActionType = "detail" | "importantInfo" | "aiDeadlines" | "v
 interface DeadlineCalendarProps {
   data: Milestone[];
   onAction: (type: CalendarActionType, milestone: Milestone) => void;
+  /** Latest edited_file from export templates — triggers calendar refetch when it changes */
+  editedFile?: string;
 }
 
 // ── Component ───────────────────────────────────────────────────────────────────
 
-export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarProps) {
+export default function DeadlineCalendar({ data, onAction, editedFile }: DeadlineCalendarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -190,7 +192,7 @@ export default function DeadlineCalendar({ data, onAction }: DeadlineCalendarPro
     isFetching: isTimeframeFetching,
     error: timeframeError,
     timeframe,
-  } = useCalendarTimeframe(selectedMonth);
+  } = useCalendarTimeframe(selectedMonth, editedFile);
 
   // ── Counts for badges ──────────────────────────────────────────────────────
   const { upcomingCount, overdueCount } = useMemo(() => {

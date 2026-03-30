@@ -195,43 +195,40 @@ export function getDeadlineSeverity(
 // ── Expanded Timeframe Range ──────────────────────────────────────────────────
 
 /**
- * Compute the expanded calendar timeframe for API fetching.
+ * Compute the calendar timeframe for API fetching.
  *
  * Returns:
- *   - start_date = 1st of the previous month
- *   - end_date   = last day of the next month
- *
- * The range is expanded in both directions so that:
- *   - Deadlines up to 30 days ahead have their warning/future reminders
- *     visible in the current month (forward expansion)
- *   - Deadlines in the previous month can still show their critical
- *     reminders if the user navigates back (backward expansion)
+ *   - start_date = 1st of the current month
+ *   - end_date   = last day of the month 2 months after the current month
  *
  * @example
  *   getCalendarTimeframeRange({ year: 2026, month: 2 }) // March 2026
- *   // → { startDate: "2026-02-01", endDate: "2026-04-30" }
+ *   // → { startDate: "2026-03-01", endDate: "2026-05-31" }
+ *
+ *   getCalendarTimeframeRange({ year: 2026, month: 11 }) // December 2026
+ *   // → { startDate: "2026-12-01", endDate: "2027-02-28" }
+ *
+ *   getCalendarTimeframeRange({ year: 2028, month: 11 }) // December 2028
+ *   // → { startDate: "2028-12-01", endDate: "2029-02-28" }
+ *
+ *   getCalendarTimeframeRange({ year: 2028, month: 0 }) // January 2028
+ *   // → { startDate: "2028-01-01", endDate: "2028-03-31" }
  */
 export function getCalendarTimeframeRange(viewMonth: ViewMonth): MonthTimeframe {
   const { year, month } = viewMonth;
 
-  // Previous month: 1st day
-  let prevYear = year;
-  let prevMonth = month - 1;
-  if (prevMonth < 0) {
-    prevMonth = 11;
-    prevYear -= 1;
-  }
-  const startDate = formatDateISO(new Date(prevYear, prevMonth, 1));
+  // Current month: 1st day
+  const startDate = formatDateISO(new Date(year, month, 1));
 
-  // Next month: last day
-  let nextYear = year;
-  let nextMonth = month + 1;
-  if (nextMonth > 11) {
-    nextMonth = 0;
-    nextYear += 1;
+  // Month + 2: last day (handles year rollover and leap years)
+  let targetYear = year;
+  let targetMonth = month + 2;
+  if (targetMonth > 11) {
+    targetYear += Math.floor(targetMonth / 12);
+    targetMonth = targetMonth % 12;
   }
   const endDate = formatDateISO(
-    new Date(nextYear, nextMonth, getDaysInMonth(nextYear, nextMonth))
+    new Date(targetYear, targetMonth, getDaysInMonth(targetYear, targetMonth))
   );
 
   return { startDate, endDate };
