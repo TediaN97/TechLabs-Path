@@ -1,11 +1,11 @@
 import DashboardContainer from "./components/DashboardContainer";
-import SecurityGateway from "./components/SecurityGateway";
+import AuthGate from "./auth/AuthGate";
 
 function App() {
   return (
-    <SecurityGateway>
+    <AuthGate>
       <DashboardContainer />
-    </SecurityGateway>
+    </AuthGate>
   );
 }
 

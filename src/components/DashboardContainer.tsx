@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useMsal } from "@azure/msal-react";
 import { useAgent } from "../hooks/useAgent";
 import type { Trigger, ExportTemplate, Milestone } from "../hooks/useAgent";
 import ChatInterface from "./ChatInterface";
@@ -587,6 +588,8 @@ function ExportsPanel({
 // ── Main Dashboard Container ───────────────────────────────────────────────────
 
 export default function DashboardContainer() {
+  const { instance, accounts } = useMsal();
+  const account = accounts[0] ?? null;
   const agent = useAgent();
   const isLoading = agent.isProcessing || agent.isExporting || agent.isUploading;
 
@@ -653,9 +656,37 @@ export default function DashboardContainer() {
               onAction={handleCalendarAction}
               editedFile={latestEditedFile}
             />
-            <div className="h-8 w-8 rounded-full bg-[#6556d2] flex items-center justify-center text-white text-xs font-bold">
-              TL
-            </div>
+            {account && (
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-full bg-[#6556d2] flex items-center justify-center text-white text-xs font-bold shrink-0">
+                  {(account.name ?? account.username ?? "U")
+                    .split(" ")
+                    .map((w) => w[0])
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase()}
+                </div>
+                <div className="hidden sm:flex flex-col leading-tight">
+                  <span className="text-xs font-semibold text-gray-800 truncate max-w-[140px]">
+                    {account.name ?? account.username}
+                  </span>
+                  {account.username && account.name && (
+                    <span className="text-[10px] text-gray-400 truncate max-w-[140px]">
+                      {account.username}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => instance.logoutRedirect()}
+                  title="Sign out"
+                  className="ml-1 p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
