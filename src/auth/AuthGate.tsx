@@ -4,9 +4,14 @@ import {
   AuthenticatedTemplate,
   UnauthenticatedTemplate,
 } from "@azure/msal-react";
-import { InteractionStatus } from "@azure/msal-browser";
-import { useState } from "react";
+import {
+  InteractionStatus,
+  InteractionRequiredAuthError,
+} from "@azure/msal-browser";
+import { useState, useEffect } from "react";
 import { loginRequest, isAuthConfigValid } from "./msalConfig";
+
+const BASE_URL = "https://brave-wave-004ae7a03.2.azurestaticapps.net/";
 
 function MicrosoftIcon() {
   return (
@@ -97,7 +102,7 @@ function LoginScreen() {
         </div>
 
         <div className="text-center">
-          <h2 className="text-lg font-bold text-gray-800">TechPath Labs</h2>
+          <h2 className="text-lg font-bold text-gray-800">Covenant AI</h2>
           <p className="text-sm text-gray-500 mt-1">
             Sign in with Microsoft to continue
           </p>
@@ -182,12 +187,37 @@ function LoadingScreen() {
   );
 }
 
+/**
+ * Wrapper that silently acquires a token on mount.
+ * If the token is expired / session invalid, clears stale state and
+ * redirects to the base page.
+ */
+function SessionGuard({ children }: { children: React.ReactNode }) {
+  const { instance } = useMsal();
+
+  useEffect(() => {
+    const account = instance.getActiveAccount();
+    if (!account) return;
+
+    instance.acquireTokenSilent({ ...loginRequest, account }).catch((err) => {
+      if (err instanceof InteractionRequiredAuthError) {
+        // Session expired — clear cache and redirect out
+        instance.clearCache().then(() => {
+          window.location.href = BASE_URL;
+        });
+      }
+    });
+  }, [instance]);
+
+  return <>{children}</>;
+}
+
 export default function AuthGate({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { inProgress } = useMsal();
+  const { instance, inProgress } = useMsal();
   const isAuthenticated = useIsAuthenticated();
 
   // While MSAL is handling a redirect or initializing, show loading
@@ -198,11 +228,27 @@ export default function AuthGate({
     return <LoadingScreen />;
   }
 
+  // If MSAL is idle but there are stale cached accounts while unauthenticated,
+  // the session has expired — clear and redirect to base page.
+  const hasStaleAccounts =
+    !isAuthenticated &&
+    inProgress === InteractionStatus.None &&
+    instance.getAllAccounts().length > 0;
+
+  if (hasStaleAccounts) {
+    instance.clearCache().then(() => {
+      window.location.href = BASE_URL;
+    });
+    return <LoadingScreen />;
+  }
+
   return (
     <>
-      <AuthenticatedTemplate>{children}</AuthenticatedTemplate>
+      <AuthenticatedTemplate>
+        <SessionGuard>{children}</SessionGuard>
+      </AuthenticatedTemplate>
       <UnauthenticatedTemplate>
-        {isAuthenticated ? <LoadingScreen /> : <LoginScreen />}
+        <LoginScreen />
       </UnauthenticatedTemplate>
     </>
   );

@@ -6,12 +6,15 @@ const tenantId = import.meta.env.VITE_ENTRA_TENANT_ID ?? "";
 const redirectUri =
   import.meta.env.VITE_ENTRA_REDIRECT_URI ?? window.location.origin;
 
+const POST_LOGOUT_REDIRECT =
+  "https://brave-wave-004ae7a03.2.azurestaticapps.net/";
+
 export const msalConfig: Configuration = {
   auth: {
     clientId,
     authority: `https://login.microsoftonline.com/${tenantId}`,
     redirectUri,
-    postLogoutRedirectUri: redirectUri,
+    postLogoutRedirectUri: POST_LOGOUT_REDIRECT,
   },
   cache: {
     cacheLocation: "localStorage",

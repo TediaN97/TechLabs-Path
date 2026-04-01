@@ -642,7 +642,7 @@ export default function DashboardContainer() {
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-14">
           <h1 className="text-lg font-bold text-gray-800 tracking-tight">
-            TechPath Labs
+            Covenant AI
           </h1>
           <div className="flex items-center gap-3">
             {isLoading && (
@@ -677,7 +677,7 @@ export default function DashboardContainer() {
                   )}
                 </div>
                 <button
-                  onClick={() => instance.logoutRedirect()}
+                  onClick={() => instance.logoutRedirect({ postLogoutRedirectUri: "https://brave-wave-004ae7a03.2.azurestaticapps.net/" })}
                   title="Sign out"
                   className="ml-1 p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
                 >
