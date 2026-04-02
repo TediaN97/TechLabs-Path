@@ -7,7 +7,7 @@ const redirectUri =
   import.meta.env.VITE_ENTRA_REDIRECT_URI ?? window.location.origin;
 
 const POST_LOGOUT_REDIRECT =
-  "https://brave-wave-004ae7a03.2.azurestaticapps.net/";
+  "http://localhost:5173/";
 
 export const msalConfig: Configuration = {
   auth: {

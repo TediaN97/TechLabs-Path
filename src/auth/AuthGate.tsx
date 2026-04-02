@@ -11,7 +11,9 @@ import {
 import { useState, useEffect } from "react";
 import { loginRequest, isAuthConfigValid } from "./msalConfig";
 
-const BASE_URL = "https://brave-wave-004ae7a03.2.azurestaticapps.net/";
+//const BASE_URL = "https://brave-wave-004ae7a03.2.azurestaticapps.net/";
+const BASE_URL = "http://localhost:5173/";
+
 
 function MicrosoftIcon() {
   return (
@@ -196,17 +198,23 @@ function SessionGuard({ children }: { children: React.ReactNode }) {
   const { instance } = useMsal();
 
   useEffect(() => {
-    const account = instance.getActiveAccount();
-    if (!account) return;
+    try {
+      const account = instance.getActiveAccount();
+      if (!account) return;
 
-    instance.acquireTokenSilent({ ...loginRequest, account }).catch((err) => {
-      if (err instanceof InteractionRequiredAuthError) {
-        // Session expired — clear cache and redirect out
-        instance.clearCache().then(() => {
-          window.location.href = BASE_URL;
-        });
-      }
-    });
+      instance.acquireTokenSilent({ ...loginRequest, account }).catch((err) => {
+        if (err instanceof InteractionRequiredAuthError) {
+          // Session expired — clear cache and redirect out
+          instance.clearCache().then(() => {
+            window.location.href = BASE_URL;
+          }).catch(() => {
+            window.location.href = BASE_URL;
+          });
+        }
+      });
+    } catch (err) {
+      console.error("[SessionGuard] Error checking token:", err);
+    }
   }, [instance]);
 
   return <>{children}</>;
@@ -230,13 +238,20 @@ export default function AuthGate({
 
   // If MSAL is idle but there are stale cached accounts while unauthenticated,
   // the session has expired — clear and redirect to base page.
-  const hasStaleAccounts =
-    !isAuthenticated &&
-    inProgress === InteractionStatus.None &&
-    instance.getAllAccounts().length > 0;
+  let hasStaleAccounts = false;
+  try {
+    hasStaleAccounts =
+      !isAuthenticated &&
+      inProgress === InteractionStatus.None &&
+      instance.getAllAccounts().length > 0;
+  } catch (err) {
+    console.error("[AuthGate] Error reading accounts:", err);
+  }
 
   if (hasStaleAccounts) {
     instance.clearCache().then(() => {
+      window.location.href = BASE_URL;
+    }).catch(() => {
       window.location.href = BASE_URL;
     });
     return <LoadingScreen />;

@@ -45,29 +45,57 @@ function SpinnerIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+import { formatStandardDate } from "../utils/formatDate";
+
 function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatStandardDate(iso);
 }
 
 // ── Trigger helpers ──────────────────────────────────────────────────────────
 
 function formatTriggerDate(iso: string): string {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "-";
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${dd}.${mm}.${yyyy} ${hh}:${min}`;
+  return formatStandardDate(iso);
+}
+
+const DAYS_OF_WEEK = [
+  { value: "monday", label: "Monday" },
+  { value: "tuesday", label: "Tuesday" },
+  { value: "wednesday", label: "Wednesday" },
+  { value: "thursday", label: "Thursday" },
+  { value: "friday", label: "Friday" },
+  { value: "saturday", label: "Saturday" },
+  { value: "sunday", label: "Sunday" },
+];
+
+const HOURS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0"));
+const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+
+function parseTime(raw: string): { hour: string; minute: string; period: "AM" | "PM" } {
+  const m = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (m) return { hour: m[1].padStart(2, "0"), minute: m[2], period: m[3].toUpperCase() as "AM" | "PM" };
+  return { hour: "09", minute: "00", period: "AM" };
+}
+
+function buildTimeString(hour: string, minute: string, period: "AM" | "PM"): string {
+  return `${hour}:${minute} ${period}`;
+}
+
+function buildSchedulePreview(frequency: string, time: string, dayOfWeek: string, dayOfMonth: string): string {
+  const t = time || "09:00 AM";
+  switch (frequency) {
+    case "hourly": return "Runs every hour";
+    case "daily": return `Runs every day at ${t}`;
+    case "weekly": {
+      const day = DAYS_OF_WEEK.find((d) => d.value === dayOfWeek)?.label || "Monday";
+      return `Runs every ${day} at ${t}`;
+    }
+    case "monthly": {
+      const dom = dayOfMonth || "1";
+      const suffix = dom === "1" || dom === "21" || dom === "31" ? "st" : dom === "2" || dom === "22" ? "nd" : dom === "3" || dom === "23" ? "rd" : "th";
+      return `Runs on the ${dom}${suffix} of every month at ${t}`;
+    }
+    default: return "";
+  }
 }
 
 function triggerStatusStyle(status: string, lastExec: string): {
@@ -141,7 +169,7 @@ function EditTriggerModal({
 }: {
   trigger: Trigger;
   onClose: () => void;
-  onSave: (fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt">>) => Promise<boolean>;
+  onSave: (fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt" | "time" | "day_of_week" | "day_of_month">>) => Promise<boolean>;
 }) {
   const [label, setLabel] = useState(trigger.label);
   const [frequency, setFrequency] = useState(trigger.frequency || "daily");
@@ -151,12 +179,37 @@ function EditTriggerModal({
   const [prompt, setPrompt] = useState(trigger.prompt || "");
   const [saving, setSaving] = useState(false);
 
+  // Schedule fields
+  const parsed = parseTime(trigger.time || "09:00 AM");
+  const [hour, setHour] = useState(parsed.hour);
+  const [minute, setMinute] = useState(parsed.minute);
+  const [period, setPeriod] = useState<"AM" | "PM">(parsed.period);
+  const [dayOfWeek, setDayOfWeek] = useState(trigger.day_of_week || "monday");
+  const [dayOfMonth, setDayOfMonth] = useState(trigger.day_of_month || "1");
+
+  const timeStr = buildTimeString(hour, minute, period);
+  const preview = buildSchedulePreview(frequency, timeStr, dayOfWeek, dayOfMonth);
+
   async function handleSave() {
     setSaving(true);
-    await onSave({ label, frequency, status, recipient_email: email, scheduled_end: scheduledEnd || undefined, prompt });
+    const fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt" | "time" | "day_of_week" | "day_of_month">> = {
+      label,
+      frequency,
+      status,
+      recipient_email: email,
+      scheduled_end: scheduledEnd || undefined,
+      prompt,
+      time: frequency !== "hourly" ? timeStr : undefined,
+      day_of_week: frequency === "weekly" ? dayOfWeek : undefined,
+      day_of_month: frequency === "monthly" ? dayOfMonth : undefined,
+    };
+    await onSave(fields);
     setSaving(false);
     onClose();
   }
+
+  const inputCls = "w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2]";
+  const labelCls = "block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
@@ -166,14 +219,16 @@ function EditTriggerModal({
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 cursor-pointer text-lg leading-none">&times;</button>
         </div>
         <div className="px-5 py-4 space-y-3 overflow-auto flex-1">
+          {/* Label */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Label</label>
-            <input value={label} onChange={(e) => setLabel(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2]" />
+            <label className={labelCls}>Label</label>
+            <input value={label} onChange={(e) => setLabel(e.target.value)} className={inputCls} />
           </div>
+          {/* Frequency + Status */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Frequency</label>
-              <select value={frequency} onChange={(e) => setFrequency(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2]">
+              <label className={labelCls}>Frequency</label>
+              <select value={frequency} onChange={(e) => setFrequency(e.target.value)} className={inputCls}>
                 <option value="hourly">Hourly</option>
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
@@ -181,30 +236,86 @@ function EditTriggerModal({
               </select>
             </div>
             <div>
-              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Status</label>
-              <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2]">
+              <label className={labelCls}>Status</label>
+              <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputCls}>
                 <option value="active">Active</option>
                 <option value="paused">Paused</option>
                 <option value="disabled">Disabled</option>
               </select>
             </div>
           </div>
+
+          {/* ── Schedule section ── */}
+          {frequency !== "hourly" && (
+            <div className="rounded-md border border-[#6556d2]/15 bg-[#6556d2]/[0.03] p-3 space-y-3">
+              <p className="text-[11px] font-semibold text-[#6556d2] uppercase tracking-wider">Schedule</p>
+
+              {/* Time picker row: Hour : Minute  AM/PM */}
+              <div>
+                <label className={labelCls}>Time</label>
+                <div className="flex items-center gap-1.5">
+                  <select value={hour} onChange={(e) => setHour(e.target.value)} className="w-16 px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2]">
+                    {HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                  <span className="text-gray-400 font-bold">:</span>
+                  <select value={minute} onChange={(e) => setMinute(e.target.value)} className="w-16 px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2]">
+                    {MINUTES.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <select value={period} onChange={(e) => setPeriod(e.target.value as "AM" | "PM")} className="w-16 px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2]">
+                    <option value="AM">AM</option>
+                    <option value="PM">PM</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Day of week (weekly only) */}
+              {frequency === "weekly" && (
+                <div>
+                  <label className={labelCls}>Day of Week</label>
+                  <select value={dayOfWeek} onChange={(e) => setDayOfWeek(e.target.value)} className={inputCls}>
+                    {DAYS_OF_WEEK.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {/* Day of month (monthly only) */}
+              {frequency === "monthly" && (
+                <div>
+                  <label className={labelCls}>Day of Month</label>
+                  <select value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} className={inputCls}>
+                    {Array.from({ length: 31 }, (_, i) => String(i + 1)).map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Preview */}
+              {preview && (
+                <p className="text-[11px] text-[#6556d2] italic">{preview}</p>
+              )}
+            </div>
+          )}
+
+          {/* Recipient Email */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Recipient Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="user@example.com" className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2]" />
+            <label className={labelCls}>Recipient Email</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="user@example.com" className={inputCls} />
           </div>
+          {/* Scheduled End */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Scheduled End</label>
-            <input type="date" value={scheduledEnd} onChange={(e) => setScheduledEnd(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2]" />
+            <label className={labelCls}>Scheduled End</label>
+            <input type="date" value={scheduledEnd} onChange={(e) => setScheduledEnd(e.target.value)} className={inputCls} />
           </div>
+          {/* Prompt */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Prompt</label>
+            <label className={labelCls}>Prompt</label>
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               rows={3}
               placeholder="AI instruction that drives this trigger…"
-              className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2] resize-y"
+              className={`${inputCls} resize-y`}
             />
           </div>
         </div>
@@ -280,7 +391,7 @@ function TriggersPanel({
 }: {
   triggers: Trigger[];
   isLoading: boolean;
-  onUpdate: (id: string, fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt">>) => Promise<boolean>;
+  onUpdate: (id: string, fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt" | "time" | "day_of_week" | "day_of_month">>) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
 }) {
   const [editTrigger, setEditTrigger] = useState<Trigger | null>(null);
@@ -346,7 +457,13 @@ function TriggersPanel({
                       </span>
                     </span>
                   </div>
-                  {/* Row 3: Next run time */}
+                  {/* Row 3: Schedule summary */}
+                  {t.time && t.frequency !== "hourly" && (
+                    <p className="mt-1 text-[10px] text-[#6556d2]/70 italic">
+                      {buildSchedulePreview(t.frequency, t.time, t.day_of_week, t.day_of_month)}
+                    </p>
+                  )}
+                  {/* Row 4: Next run time */}
                   {t.next_run_at && (
                     <div className="flex items-center gap-1 mt-1.5 text-[10px] text-gray-400">
                       <SmallClockIcon />
@@ -613,6 +730,11 @@ export default function DashboardContainer() {
     setPendingInput(null);
   }, [agent.clearReloadMode]);
 
+  const handleClearChat = useCallback(() => {
+    agent.clearChatAndMemory();
+    setPendingInput(null);
+  }, [agent.clearChatAndMemory]);
+
   // ── Calendar → StructuralDataLookup modal bridge ──────────────────────────
   const [calendarAction, setCalendarAction] = useState<{
     type: CalendarActionType;
@@ -677,7 +799,7 @@ export default function DashboardContainer() {
                   )}
                 </div>
                 <button
-                  onClick={() => instance.logoutRedirect({ postLogoutRedirectUri: "https://brave-wave-004ae7a03.2.azurestaticapps.net/" })}
+                  onClick={() => instance.logoutRedirect({ postLogoutRedirectUri: "http://localhost:5173/" })}
                   title="Sign out"
                   className="ml-1 p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
                 >
@@ -708,6 +830,7 @@ export default function DashboardContainer() {
               isReloadMode={agent.reloadMode.active}
               reloadFileName={agent.reloadMode.fileName}
               onCancelReload={handleCancelReload}
+              onClearChat={handleClearChat}
             />
             <StructuralDataLookup
               data={agent.data}

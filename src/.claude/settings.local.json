@@ -6,7 +6,10 @@
       "Bash(npx vite:*)",
       "mcp__Claude_Preview__preview_start",
       "Bash(ls -la /c/TPLabs/TechLabs-Path/src/index.css /c/TPLabs/TechLabs-Path/src/*.html)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(grep -r \"impact_level\\\\|importance\" /c/TPLabs/TechLabs-Path/src --include=*.tsx --include=*.ts --include=*.json)",
+      "Bash(grep -n \"formatUploadDate\\\\|formatDisplayDate\\\\|formatTimestamp\\\\|formatDateDDMMYYYY\\\\|formatTime\\\\|formatDate\\\\|toLocaleDateString\\\\|toLocaleTimeString\\\\|toLocaleString\\\\|toISOString\" /c/TPLabs/TechLabs-Path/src/components/calendar/*.tsx)",
+      "Bash(grep -r \"session_id\\\\|sessionId\" /c/TPLabs/TechLabs-Path/src --include=*.tsx --include=*.ts --exclude-dir=node_modules --exclude-dir=.claude)"
     ]
   }
 }

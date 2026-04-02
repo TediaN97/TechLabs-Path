@@ -215,13 +215,11 @@ function isNumericValue(v: unknown): boolean {
   return cleaned.length > 0 && !isNaN(Number(cleaned));
 }
 
-/** Format ISO date string to DD.MM.YYYY */
+import { formatStandardDate } from "../utils/formatDate";
+
+/** Format ISO date string to MM/DD/YYYY HH:MM:SS AM/PM */
 function formatDate(v: string): string {
-  const d = new Date(v);
-  if (isNaN(d.getTime())) return v;
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  return `${dd}.${mm}.${d.getFullYear()}`;
+  return formatStandardDate(v);
 }
 
 /** Format a cell value for display */
@@ -441,6 +439,8 @@ interface ChatInterfaceProps {
   reloadFileName?: string;
   /** Called to cancel reload mode */
   onCancelReload?: () => void;
+  /** Called to clear all chat messages and reset session memory */
+  onClearChat?: () => void;
 }
 
 export default function ChatInterface({
@@ -455,6 +455,7 @@ export default function ChatInterface({
   isReloadMode = false,
   reloadFileName = "",
   onCancelReload,
+  onClearChat,
 }: ChatInterfaceProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -585,9 +586,27 @@ export default function ChatInterface({
   return (
     <div className="bg-white shadow-sm rounded-lg flex flex-col" style={{ height: "460px" }}>
       {/* Header */}
-      <div className="px-5 py-3.5 border-b border-gray-100 flex-shrink-0">
-        <h2 className="text-base font-semibold text-gray-800">Chat</h2>
-        <p className="text-xs text-gray-400 mt-0.5">Ask questions about your documents</p>
+      <div className="px-5 py-3.5 border-b border-gray-100 flex-shrink-0 flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-gray-800">Chat</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Ask questions about your documents</p>
+        </div>
+        {onClearChat && messages.length > 0 && (
+          <button
+            onClick={() => {
+              if (window.confirm("Are you sure you want to clear the chat and reset memory?")) {
+                onClearChat();
+              }
+            }}
+            title="Clear chat and memory"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Clear chat
+          </button>
+        )}
       </div>
 
       {/* Messages area — flex-1 so it shrinks when the input bar grows */}
@@ -721,7 +740,7 @@ export default function ChatInterface({
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
               <polyline points="14 2 14 8 20 8" />
             </svg>
-            Data File
+            Add Export Template
           </button>
 
           {/* Auto-expanding textarea */}

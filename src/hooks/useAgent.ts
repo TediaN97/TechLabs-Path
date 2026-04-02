@@ -274,12 +274,17 @@ function simulateApi<T>(result: T, delayMs = 800): Promise<T> {
 const SESSION_STORAGE_KEY = "techpath_session_id";
 
 function getOrCreateSessionId(): string {
-  let sessionId = localStorage.getItem(SESSION_STORAGE_KEY);
-  if (!sessionId) {
-    sessionId = crypto.randomUUID();
-    localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+  try {
+    let sessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!sessionId) {
+      sessionId = crypto.randomUUID();
+      localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+    }
+    return sessionId;
+  } catch {
+    // localStorage may be unavailable (private browsing, quota exceeded, etc.)
+    return crypto.randomUUID();
   }
-  return sessionId;
 }
 
 // ── n8n Chat webhook ─────────────────────────────────────────────────────────
@@ -507,6 +512,9 @@ export interface Trigger {
   recipient_email: string;
   scheduled_end: string;
   prompt: string;
+  time: string;
+  day_of_week: string;
+  day_of_month: string;
 }
 
 /**
@@ -545,6 +553,9 @@ async function fetchTriggers(): Promise<Trigger[] | null> {
         recipient_email: (t.recipient_email as string) || "",
         scheduled_end: (t.scheduled_end as string) || "",
         prompt: (t.prompt as string) || "",
+        time: (t.time as string) || "",
+        day_of_week: (t.day_of_week as string) || "",
+        day_of_month: (t.day_of_month as string) || "",
       })
     );
     // Sort by created_at descending (most recent first)
@@ -563,7 +574,7 @@ async function fetchTriggers(): Promise<Trigger[] | null> {
  */
 async function patchTrigger(
   id: string,
-  fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt">>
+  fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt" | "time" | "day_of_week" | "day_of_month">>
 ): Promise<boolean> {
   try {
     const res = await fetch(TRIGGERS_URL, {
@@ -1218,6 +1229,16 @@ export function useAgent() {
     setReloadMode({ active: false, sourceFileId: "", fileName: "" });
   }, []);
 
+  const clearChatAndMemory = useCallback(() => {
+    // Clear all chat messages
+    setMessages([]);
+    // Generate a fresh session id
+    const newSessionId = crypto.randomUUID();
+    try { localStorage.setItem(SESSION_STORAGE_KEY, newSessionId); } catch { /* ignore */ }
+    // Clear reload mode
+    setReloadMode({ active: false, sourceFileId: "", fileName: "" });
+  }, []);
+
   const handleExportDelete = useCallback(
     async (sourceFileId: string): Promise<boolean> => {
       try {
@@ -1366,7 +1387,7 @@ export function useAgent() {
   const updateTrigger = useCallback(
     async (
       id: string,
-      fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt">>
+      fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt" | "time" | "day_of_week" | "day_of_month">>
     ): Promise<boolean> => {
       const ok = await patchTrigger(id, fields);
       if (ok) {
@@ -1461,5 +1482,6 @@ export function useAgent() {
     handleExportDelete,
     handleExportRename,
     clearReloadMode,
+    clearChatAndMemory,
   };
 }
