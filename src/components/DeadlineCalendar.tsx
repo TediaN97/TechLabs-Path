@@ -191,7 +191,6 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
     isLoading: isTimeframeLoading,
     isFetching: isTimeframeFetching,
     error: timeframeError,
-    timeframe,
   } = useCalendarTimeframe(selectedMonth, editedFile);
 
   // ── Filter deadlineMap to visible month only ────────────────────────────────
