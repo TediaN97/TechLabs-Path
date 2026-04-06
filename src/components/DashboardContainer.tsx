@@ -763,8 +763,12 @@ export default function DashboardContainer() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-14">
-          <h1 className="text-lg font-bold text-gray-800 tracking-tight">
-            Covenant AI
+          <h1 className="flex items-center justify-center gap-2 text-lg font-bold text-gray-800">
+            <img 
+              src="/CovenantAILogo.png" 
+              alt="Covenant AI" 
+              className="h-8 w-8 object-contain"
+            /> Covenant AI
           </h1>
           <div className="flex items-center gap-3">
             {isLoading && (
