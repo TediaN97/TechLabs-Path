@@ -799,7 +799,8 @@ export default function DashboardContainer() {
                   )}
                 </div>
                 <button
-                  onClick={() => instance.logoutRedirect({ postLogoutRedirectUri: "http://localhost:5173/" })}
+                  // onClick={() => instance.logoutRedirect({ postLogoutRedirectUri: "http://localhost:5173/" })}
+                  onClick={() => instance.logoutRedirect({ postLogoutRedirectUri: "https://brave-wave-004ae7a03.2.azurestaticapps.net/" })}
                   title="Sign out"
                   className="ml-1 p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
                 >

@@ -11,8 +11,8 @@ import {
 import { useState, useEffect } from "react";
 import { loginRequest, isAuthConfigValid } from "./msalConfig";
 
-//const BASE_URL = "https://brave-wave-004ae7a03.2.azurestaticapps.net/";
-const BASE_URL = "http://localhost:5173/";
+const BASE_URL = "https://brave-wave-004ae7a03.2.azurestaticapps.net/";
+// const BASE_URL = "http://localhost:5173/";
 
 
 function MicrosoftIcon() {
