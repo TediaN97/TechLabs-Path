@@ -1745,8 +1745,8 @@ export default function StructuralDataLookup({
             <thead>
               <tr className="border-b border-gray-100">
                 {([
-                  { key: "file_name" as SortKey, label: "Name", width: "w-[24%]" },
-                  { key: "upload_time" as SortKey, label: "Upload Date", width: "w-[12%]" },
+                  { key: "file_name" as SortKey, label: "Name", width: "w-[18%]" },
+                  { key: "upload_time" as SortKey, label: "Upload Date", width: "w-[13%]" },
                   { key: "lender" as SortKey, label: "StakeHolder 1", width: "w-[24%]" },
                   { key: "borrower" as SortKey, label: "StakeHolder 2", width: "w-[24%]" },
                 ] as const).map((col) => {
