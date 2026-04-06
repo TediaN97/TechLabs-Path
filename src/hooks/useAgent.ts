@@ -307,6 +307,8 @@ async function sendChatMessage(
         sessionId,
         message,
         chatInput: message,
+        timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return "Europe/Bratislava"; } })(),
+        utc_offset: (() => { try { const o = -new Date().getTimezoneOffset() / 60; return Number.isFinite(o) ? o : 2; } catch { return 2; } })(),
       }),
     });
     if (!res.ok) {
@@ -468,6 +470,21 @@ function extractAssistantReply(responseArray: unknown[]): string | null {
     return null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Extract intent from n8n response array.
+ * The intent may be on the first response object as `intent`.
+ */
+function extractIntent(responseArray: unknown[]): string | undefined {
+  try {
+    if (!responseArray.length) return undefined;
+    const first = responseArray[0] as Record<string, unknown>;
+    const intent = first?.intent;
+    return typeof intent === "string" ? intent : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -1096,6 +1113,7 @@ export function useAgent() {
               role: "assistant",
               content: replyText,
               rawJson: docResult.json,
+              intent: extractIntent(docResult.json),
             };
             setMessages((prev) => [...prev, assistantMsg]);
             logExecution("AI agent responded (reload)");
@@ -1140,6 +1158,7 @@ export function useAgent() {
               role: "assistant",
               content: replyText,
               rawJson: docResult.json,
+              intent: extractIntent(docResult.json),
             };
             setMessages((prev) => [...prev, assistantMsg]);
             logExecution("AI agent responded");
@@ -1173,6 +1192,7 @@ export function useAgent() {
               role: "assistant",
               content: replyText,
               rawJson: responseArray,
+              intent: extractIntent(responseArray),
             };
             setMessages((prev) => [...prev, assistantMsg]);
             logExecution("AI agent responded");

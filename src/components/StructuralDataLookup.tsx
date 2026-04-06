@@ -256,7 +256,7 @@ function DeadlinesDropdown({
   );
 }
 
-import { formatStandardDate } from "../utils/formatDate";
+import { formatStandardDate, formatDateOnly } from "../utils/formatDate";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function formatUploadDate(iso: string): string {
@@ -265,7 +265,7 @@ function formatUploadDate(iso: string): string {
 
 function formatDateDDMMYYYY(raw: string | null): string | null {
   if (!raw) return null;
-  return formatStandardDate(raw);
+  return formatDateOnly(raw);
 }
 
 function formatCurrency(amount: number | null | undefined, currency?: string | null): string {

@@ -10,7 +10,7 @@ import type {
 import CalendarToolbar from "./calendar/CalendarToolbar";
 import DeadlineModalActions from "./calendar/DeadlineModalActions";
 import DeadlineSeverityIndicator from "./calendar/DeadlineSeverityIndicator";
-import { formatStandardDate } from "../utils/formatDate";
+import { formatDateOnly } from "../utils/formatDate";
 
 // ── Calendar Grid Helpers ───────────────────────────────────────────────────────
 
@@ -195,18 +195,39 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
     timeframe,
   } = useCalendarTimeframe(selectedMonth, editedFile);
 
-  // ── Counts for badges ──────────────────────────────────────────────────────
+  // ── Filter deadlineMap to visible month only ────────────────────────────────
+  const visibleMonthMap = useMemo(() => {
+    const { year, month } = selectedMonth;
+    const prefix = `${year}-${String(month + 1).padStart(2, "0")}-`; // e.g. "2026-03-"
+    const filtered: typeof deadlineMap = {};
+    for (const [dateKey, dayData] of Object.entries(deadlineMap)) {
+      if (dateKey.startsWith(prefix)) {
+        filtered[dateKey] = dayData;
+      }
+    }
+    return filtered;
+  }, [deadlineMap, selectedMonth]);
+
+  // ── Counts for badges (visible month only) ────────────────────────────────
   const { upcomingCount, overdueCount } = useMemo(() => {
     let upcoming = 0;
     let overdue = 0;
-    for (const dayData of Object.values(deadlineMap)) {
+    for (const dayData of Object.values(visibleMonthMap)) {
       for (const item of dayData.items) {
         if (item.severity === "past") overdue++;
         else upcoming++;
       }
     }
     return { upcomingCount: upcoming, overdueCount: overdue };
-  }, [deadlineMap]);
+  }, [visibleMonthMap]);
+
+  const visibleMonthTotal = useMemo(() => {
+    let total = 0;
+    for (const dayData of Object.values(visibleMonthMap)) {
+      total += dayData.items.length;
+    }
+    return total;
+  }, [visibleMonthMap]);
 
   // ── Month navigation ──────────────────────────────────────────────────────
   const prevMonth = useCallback(() => {
@@ -286,7 +307,7 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
         day: d,
         dateKey: key,
         isToday: key === todayKey,
-        dayData: deadlineMap[key] ?? null,
+        dayData: visibleMonthMap[key] ?? null,
       });
     }
 
@@ -296,7 +317,7 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
     }
 
     return result;
-  }, [year, month, todayKey, deadlineMap]);
+  }, [year, month, todayKey, visibleMonthMap]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -312,14 +333,6 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
     >
       <CalendarButtonIcon />
       <span className="hidden sm:inline">Calendar</span>
-      {upcomingCount > 0 && (
-        <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 text-[10px] font-bold text-white bg-[#6556d2] rounded-full">
-          {upcomingCount > 99 ? "99+" : upcomingCount}
-        </span>
-      )}
-      {overdueCount > 0 && (
-        <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-white" />
-      )}
     </button>
 
     {/* Main Calendar Modal */}
@@ -349,7 +362,7 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
                 <div>
                   <h3 className="text-sm font-semibold text-white">Deadline Calendar</h3>
                   <p className="text-[11px] text-white/70 mt-0.5">
-                      {totalInWindow} deadline{totalInWindow !== 1 ? "s" : ""} in {MONTH_NAMES[month]} {year}
+                      {visibleMonthTotal} deadline{visibleMonthTotal !== 1 ? "s" : ""} in {MONTH_NAMES[month]} {year}
                   </p>
                 </div>
               </div>
@@ -471,7 +484,16 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
                                 return (
                                   <button
                                     key={fg.fileName}
-                                    onClick={() => setSelectedDay(dayData)}
+                                    onClick={() => {
+                                      // Filter to only this document's deadlines
+                                      const filtered: CalendarDayData = {
+                                        date: dayData.date,
+                                        count: fg.count,
+                                        documentsAffected: [fg.fileName],
+                                        items: dayData.items.filter((i) => i.fileName === fg.fileName),
+                                      };
+                                      setSelectedDay(filtered);
+                                    }}
                                     className="w-full text-left flex items-center gap-1 px-1 py-0.5 rounded text-[10px] leading-tight hover:bg-[#6556d2]/10 transition-colors cursor-pointer group truncate"
                                       title={`${fg.fileName} — ${fg.count} deadline${fg.count !== 1 ? "s" : ""}`}
                                   >
@@ -558,53 +580,75 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
                     </button>
                   </div>
 
-                  {/* Deadline list */}
+                  {/* Deadline list — grouped by document */}
                   <div className="overflow-auto flex-1 p-5">
                     {selectedDay.items.length === 0 ? (
                       <p className="text-sm text-gray-400 text-center py-6">No deadline details available.</p>
                     ) : (
-                      <div className="space-y-3">
-                        {selectedDay.items.map((item, idx) => (
-                          <div key={idx} className="rounded-lg border border-gray-100 bg-gray-50/50 p-3.5">
-                            <div className="flex items-start gap-2">
-                              <span className={`inline-block h-2 w-2 rounded-full mt-1.5 flex-shrink-0 ${severityDotColor(item.severity)}`} />
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs text-gray-800 font-semibold truncate" title={item.fileName}>
-                                  {item.fileName}
+                      <div className="space-y-4">
+                        {(() => {
+                          // Group items by fileName
+                          const grouped = new Map<string, CalendarDeadlineItem[]>();
+                          for (const item of selectedDay.items) {
+                            const key = item.fileName;
+                            if (!grouped.has(key)) grouped.set(key, []);
+                            grouped.get(key)!.push(item);
+                          }
+                          return Array.from(grouped.entries()).map(([fileName, items]) => (
+                            <div key={fileName} className="rounded-lg border border-gray-100 bg-gray-50/50 overflow-hidden">
+                              {/* Document header */}
+                              <div className="px-3.5 pt-3.5 pb-2">
+                                <p className="text-xs text-gray-800 font-semibold truncate" title={fileName}>
+                                  {fileName}
                                 </p>
-                                {item.description && (
-                                  <p className="text-xs text-gray-600 leading-relaxed mt-1">
-                                    {item.description}
-                                  </p>
-                                )}
-                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] text-gray-400">
-                                  {item.sectionTitle && (
-                                    <span>Section: {item.sectionTitle}</span>
-                                  )}
-                                  {item.dateRaw && (
-                                    <span>Date: {formatStandardDate(item.dateRaw)}</span>
-                                  )}
-                                  {item.originalDeadlineDate && item.reminderType !== "critical" && (
-                                    <span>Deadline: {formatStandardDate(item.originalDeadlineDate)}</span>
-                                  )}
-                                  <span className={`font-semibold ${severityTextColor(item.severity)}`}>
-                                    {itemDisplayLabel(item)}
-                                  </span>
-                                </div>
+                              </div>
+
+                              {/* Deadline entries for this document */}
+                              <div className="px-3.5 pb-2 space-y-2">
+                                {items.map((item, idx) => (
+                                  <div key={idx} className="flex items-start gap-2">
+                                    <span className={`inline-block h-2 w-2 rounded-full mt-1 flex-shrink-0 ${severityDotColor(item.severity)}`} />
+                                    <div className="min-w-0 flex-1">
+                                      {item.description && (
+                                        <p className="text-xs text-gray-600 leading-relaxed">
+                                          {item.description}
+                                        </p>
+                                      )}
+                                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[10px] text-gray-400">
+                                        {item.sectionTitle && (
+                                          <span>Section: {item.sectionTitle}</span>
+                                        )}
+                                        {item.dateRaw && (
+                                          <span>Date: {formatDateOnly(item.dateRaw)}</span>
+                                        )}
+                                        {item.originalDeadlineDate && item.reminderType !== "critical" && (
+                                          <span>Deadline: {formatDateOnly(item.originalDeadlineDate)}</span>
+                                        )}
+                                        <span className={`font-semibold ${severityTextColor(item.severity)}`}>
+                                          {itemDisplayLabel(item)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Action buttons — once per document */}
+                              <div className="px-3.5 py-2 border-t border-gray-100 bg-white/60">
+                                <DeadlineModalActions
+                                  documentsAffected={[fileName]}
+                                  onAction={handleAction}
+                                />
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ));
+                        })()}
                       </div>
                     )}
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/50">
-                    <DeadlineModalActions
-                      documentsAffected={selectedDay.documentsAffected}
-                      onAction={handleAction}
-                    />
+                  {/* Footer — Close button */}
+                  <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-end flex-shrink-0 bg-gray-50/50">
                     <button
                       onClick={() => setSelectedDay(null)}
                       className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors cursor-pointer flex-shrink-0"
@@ -625,5 +669,5 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 
 function formatDisplayDate(dateKey: string): string {
-  return formatStandardDate(dateKey);
+  return formatDateOnly(dateKey);
 }

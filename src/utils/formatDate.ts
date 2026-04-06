@@ -51,3 +51,28 @@ export function formatStandardDate(value: string | null | undefined): string {
     year: "numeric",
   });
 }
+
+/**
+ * Date-only formatter: always returns MM/DD/YYYY with no time component.
+ *
+ * @example
+ *   formatDateOnly("2004-12-14T14:45:10Z")  // → "12/14/2004"
+ *   formatDateOnly("2004-12-14")            // → "12/14/2004"
+ *   formatDateOnly(null)                    // → "-"
+ */
+export function formatDateOnly(value: string | null | undefined): string {
+  if (!value) return "-";
+
+  const raw = value.trim();
+  const rawHasTime =
+    raw.includes("T") || raw.includes("Z") || /\d{2}:\d{2}/.test(raw);
+
+  const d = new Date(rawHasTime ? raw : raw + "T00:00:00");
+  if (isNaN(d.getTime())) return "-";
+
+  return d.toLocaleDateString("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+  });
+}

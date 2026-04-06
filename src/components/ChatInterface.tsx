@@ -7,6 +7,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   rawJson?: unknown;
+  intent?: string;
 }
 
 // ── Icons ───────────────────────────────────────────────────────────────────────
@@ -320,6 +321,108 @@ function CodeIcon() {
   );
 }
 
+// ── Feedback Icons ──────────────────────────────────────────────────────────────
+
+function ThumbsUpIcon({ filled }: { filled?: boolean }) {
+  return filled ? (
+    <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M2 20h2V10H2v10zm20-9a2 2 0 00-2-2h-6.32l.95-4.57.03-.32a1.5 1.5 0 00-.44-1.06L13.17 2 7.59 7.59A1.98 1.98 0 007 9v10a2 2 0 002 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z" />
+    </svg>
+  ) : (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
+    </svg>
+  );
+}
+
+function ThumbsDownIcon({ filled }: { filled?: boolean }) {
+  return filled ? (
+    <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M22 4h-2v10h2V4zM2 13a2 2 0 002 2h6.32l-.95 4.57-.03.32c0 .4.17.78.44 1.06L10.83 22l5.58-5.59A1.98 1.98 0 0017 15V5a2 2 0 00-2-2H6c-.83 0-1.54.5-1.84 1.22L1.14 11.27c-.09.23-.14.47-.14.73v2z" />
+    </svg>
+  ) : (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10zM17 2h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />
+    </svg>
+  );
+}
+
+// ── Feedback endpoints ──────────────────────────────────────────────────────────
+
+const FEEDBACK_POSITIVE_URL = "https://20.110.72.120.nip.io/webhook/feedback/positive";
+const FEEDBACK_NEGATIVE_URL = "https://20.110.72.120.nip.io/webhook/feedback/negative";
+
+const FEEDBACK_INTENTS = new Set(["query_only", "query_and_send"]);
+
+function getSessionId(): string {
+  try {
+    return localStorage.getItem("techpath_session_id") || "";
+  } catch {
+    return "";
+  }
+}
+
+// ── Negative Feedback Modal ────────────────────────────────────────────────────
+
+function NegativeFeedbackModal({
+  onSubmit,
+  onCancel,
+  isSubmitting,
+}: {
+  onSubmit: (comment: string) => void;
+  onCancel: () => void;
+  isSubmitting: boolean;
+}) {
+  const [comment, setComment] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/20"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-3.5 bg-[#6556d2]">
+          <h3 className="text-sm font-semibold text-white">What could be improved?</h3>
+        </div>
+        <div className="p-5">
+          <textarea
+            ref={textareaRef}
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Tell us what needs improvement..."
+            disabled={isSubmitting}
+            className="w-full h-24 px-3 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#6556d2]/30 focus:border-[#6556d2]/40 disabled:opacity-50"
+          />
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={isSubmitting}
+            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSubmit(comment)}
+            disabled={isSubmitting}
+            className="px-3 py-1.5 text-xs font-medium text-white bg-[#6556d2] rounded-md hover:bg-[#5445b5] transition-colors cursor-pointer disabled:opacity-50"
+          >
+            {isSubmitting ? "Sending..." : "Submit"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Message bubble ──────────────────────────────────────────────────────────────
 
 function MessageBubble({ message }: { message: ChatMessage }) {
@@ -327,6 +430,62 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   const [showJson, setShowJson] = useState(false);
   const hasJson = message.rawJson != null;
   const tableData = !isUser ? extractTableData(message.rawJson) : null;
+
+  // Feedback state
+  const showFeedback = !isUser && !!message.intent && FEEDBACK_INTENTS.has(message.intent);
+  const [feedbackGiven, setFeedbackGiven] = useState<"up" | "down" | null>(null);
+  const [showNegativeModal, setShowNegativeModal] = useState(false);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+
+  const handleThumbsUp = useCallback(async () => {
+    if (feedbackGiven) return;
+    const sessionId = getSessionId();
+    if (!sessionId) return;
+    setFeedbackGiven("up");
+    try {
+      const res = await fetch(FEEDBACK_POSITIVE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      if (!res.ok) {
+        console.warn("[Feedback] positive failed:", res.status);
+        setFeedbackGiven(null);
+      }
+    } catch {
+      setFeedbackGiven(null);
+    }
+  }, [feedbackGiven]);
+
+  const handleThumbsDown = useCallback(() => {
+    if (feedbackGiven) return;
+    setShowNegativeModal(true);
+  }, [feedbackGiven]);
+
+  const handleNegativeSubmit = useCallback(async (comment: string) => {
+    const sessionId = getSessionId();
+    if (!sessionId) return;
+    setIsSubmittingFeedback(true);
+    try {
+      const res = await fetch(FEEDBACK_NEGATIVE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, comment: comment.trim() }),
+      });
+      if (!res.ok) {
+        console.warn("[Feedback] negative failed:", res.status);
+        alert("Failed to submit feedback. Please try again.");
+        setIsSubmittingFeedback(false);
+        return;
+      }
+      setFeedbackGiven("down");
+      setShowNegativeModal(false);
+    } catch {
+      alert("Failed to submit feedback. Please try again.");
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  }, []);
 
   return (
     <div className={`flex items-start gap-2 mb-3 ${isUser ? "flex-row-reverse" : ""}`}>
@@ -364,6 +523,43 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
 
+        {/* Feedback controls — only for qualifying intents */}
+        {showFeedback && (
+          <div className="flex items-center gap-1 mt-1">
+            <button
+              onClick={handleThumbsUp}
+              disabled={!!feedbackGiven}
+              title="Good response"
+              className={`p-1 rounded transition-colors cursor-pointer ${
+                feedbackGiven === "up"
+                  ? "text-green-600"
+                  : feedbackGiven
+                    ? "text-gray-300 cursor-default"
+                    : "text-gray-400 hover:text-green-600 hover:bg-green-50"
+              }`}
+            >
+              <ThumbsUpIcon filled={feedbackGiven === "up"} />
+            </button>
+            <button
+              onClick={handleThumbsDown}
+              disabled={!!feedbackGiven}
+              title="Needs improvement"
+              className={`p-1 rounded transition-colors cursor-pointer ${
+                feedbackGiven === "down"
+                  ? "text-red-500"
+                  : feedbackGiven
+                    ? "text-gray-300 cursor-default"
+                    : "text-gray-400 hover:text-red-500 hover:bg-red-50"
+              }`}
+            >
+              <ThumbsDownIcon filled={feedbackGiven === "down"} />
+            </button>
+            {feedbackGiven && (
+              <span className="text-[10px] text-gray-400 ml-1">Thanks for your feedback</span>
+            )}
+          </div>
+        )}
+
         {/* Togglable JSON debug view */}
         {showJson && hasJson && (
           <div className={`mt-1.5 rounded-lg border border-[#6556d2]/20 overflow-hidden ${isUser ? "text-left" : ""}`}>
@@ -385,6 +581,15 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
       </div>
+
+      {/* Negative feedback modal */}
+      {showNegativeModal && (
+        <NegativeFeedbackModal
+          onSubmit={handleNegativeSubmit}
+          onCancel={() => setShowNegativeModal(false)}
+          isSubmitting={isSubmittingFeedback}
+        />
+      )}
     </div>
   );
 }
