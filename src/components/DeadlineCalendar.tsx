@@ -10,6 +10,7 @@ import type {
 import CalendarToolbar from "./calendar/CalendarToolbar";
 import DeadlineModalActions from "./calendar/DeadlineModalActions";
 import DeadlineSeverityIndicator from "./calendar/DeadlineSeverityIndicator";
+import { formatStandardDate } from "../utils/formatDate";
 
 // ── Calendar Grid Helpers ───────────────────────────────────────────────────────
 
@@ -581,10 +582,10 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
                                     <span>Section: {item.sectionTitle}</span>
                                   )}
                                   {item.dateRaw && (
-                                    <span>Date: {item.dateRaw}</span>
+                                    <span>Date: {formatStandardDate(item.dateRaw)}</span>
                                   )}
                                   {item.originalDeadlineDate && item.reminderType !== "critical" && (
-                                    <span>Deadline: {item.originalDeadlineDate}</span>
+                                    <span>Deadline: {formatStandardDate(item.originalDeadlineDate)}</span>
                                   )}
                                   <span className={`font-semibold ${severityTextColor(item.severity)}`}>
                                     {itemDisplayLabel(item)}
@@ -624,13 +625,5 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 
 function formatDisplayDate(dateKey: string): string {
-  const parts = dateKey.split("-");
-  if (parts.length !== 3) return dateKey;
-  const d = new Date(+parts[0], +parts[1] - 1, +parts[2]);
-  return d.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatStandardDate(dateKey);
 }

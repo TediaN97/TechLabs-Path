@@ -256,27 +256,16 @@ function DeadlinesDropdown({
   );
 }
 
+import { formatStandardDate } from "../utils/formatDate";
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function formatUploadDate(iso: string): string {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "-";
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${dd}.${mm}.${yyyy} ${hh}:${min}`;
+  return formatStandardDate(iso);
 }
 
 function formatDateDDMMYYYY(raw: string | null): string | null {
   if (!raw) return null;
-  const d = new Date(raw.includes("T") ? raw : raw + "T00:00:00");
-  if (isNaN(d.getTime())) return raw; // return as-is if unparseable
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${dd}.${mm}.${yyyy}`;
+  return formatStandardDate(raw);
 }
 
 function formatCurrency(amount: number | null | undefined, currency?: string | null): string {
@@ -303,8 +292,7 @@ function getImpactBadge(level: string): string {
 }
 
 function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return formatStandardDate(iso);
 }
 
 // ── Skeleton ───────────────────────────────────────────────────────────────────
@@ -437,7 +425,21 @@ function StructureDetailModal({
   }, [onClose]);
 
   const min = data?.min_structure;
-  const features = data?.max_structure ?? [];
+
+  const features = useMemo(() => {
+    const raw = data?.max_structure ?? [];
+    const impactRank: Record<string, number> = {
+      critical: 4,
+      high: 3,
+      medium: 2,
+      low: 1,
+    };
+    return [...raw].sort((a, b) => {
+      const aVal = impactRank[a.impact_level?.toLowerCase()] ?? -Infinity;
+      const bVal = impactRank[b.impact_level?.toLowerCase()] ?? -Infinity;
+      return bVal - aVal;
+    });
+  }, [data?.max_structure]);
 
   const tabs: { id: DetailTab; label: string; count?: number }[] = [
     { id: "overview", label: "Basic Terms" },
@@ -768,66 +770,51 @@ function StructureDetailModal({
 
 // ── Vectorized Deadlines – urgency helpers (self-contained) ──────────────────
 
-type VDUrgency = "critical" | "standard" | "future" | "past";
-
-function vdGetUrgency(dateRaw: string): VDUrgency {
-  if (!dateRaw || dateRaw === "—" || dateRaw === "-") return "future";
-  // Attempt to parse the date using common formats
-  let parsed: Date | null = null;
-  if (dateRaw.includes("T")) {
-    const d = new Date(dateRaw);
-    if (!isNaN(d.getTime())) parsed = d;
-  }
-  if (!parsed && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
-    const d = new Date(dateRaw + "T00:00:00");
-    if (!isNaN(d.getTime())) parsed = d;
-  }
-  if (!parsed) {
-    const dotParts = dateRaw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-    if (dotParts) {
-      const d = new Date(+dotParts[3], +dotParts[2] - 1, +dotParts[1]);
-      if (!isNaN(d.getTime())) parsed = d;
-    }
-  }
-  if (!parsed) {
-    const d = new Date(dateRaw);
-    if (!isNaN(d.getTime())) parsed = d;
-  }
-  if (!parsed) return "future";
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(parsed);
-  target.setHours(0, 0, 0, 0);
-  const daysRemaining = Math.floor((target.getTime() - today.getTime()) / 86400000);
-  if (daysRemaining < 0) return "past";
-  if (daysRemaining < 2) return "critical";
-  if (daysRemaining <= 10) return "standard";
-  return "future";
-}
-
-function vdBadgeClasses(u: VDUrgency): string {
-  switch (u) {
-    case "critical": return "bg-red-100 text-red-700 border-red-200";
-    case "standard": return "bg-amber-100 text-amber-700 border-amber-200";
-    case "future":   return "bg-blue-100 text-blue-700 border-blue-200";
-    case "past":     return "bg-gray-100 text-gray-500 border-gray-200";
+/**
+ * Badge styling based on backend-provided urgency value.
+ * Handles known values ("high", "medium", "low") and any unexpected strings safely.
+ */
+function vdBadgeClasses(u: string): string {
+  switch (u.toLowerCase()) {
+    case "critical": return "bg-red-200 text-red-800 border-red-300";
+    case "high":     return "bg-red-100 text-red-700 border-red-200";
+    case "medium":   return "bg-amber-100 text-amber-700 border-amber-200";
+    case "low":      return "bg-blue-100 text-blue-700 border-blue-200";
+    default:         return "bg-gray-100 text-gray-500 border-gray-200";
   }
 }
 
-function vdBadgeLabel(u: VDUrgency): string {
-  switch (u) {
-    case "critical": return "Critical";
-    case "standard": return "Standard";
-    case "future":   return "Future";
-    case "past":     return "Past";
+/**
+ * Dot color for the inline urgency indicator, driven by backend urgency.
+ */
+function vdDotColor(u: string): string {
+  switch (u.toLowerCase()) {
+    case "critical": return "bg-red-600";
+    case "high":     return "bg-red-500";
+    case "medium":   return "bg-amber-400";
+    case "low":      return "bg-blue-500";
+    default:         return "bg-gray-400";
   }
 }
 
 // ── Vectorized Deadlines Table Modal ──────────────────────────────────────────
 
+const URGENCY_PRIORITY: Record<string, number> = {
+  critical: 5,
+  high: 4,
+  medium: 3,
+  low: 2,
+};
+
 function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClose: () => void }) {
-  const deadlines: DeadlineEntry[] = milestone.deadlines ?? [];
+  const deadlines: DeadlineEntry[] = useMemo(() => {
+    const raw = milestone.deadlines ?? [];
+    return [...raw].sort((a, b) => {
+      const aVal = URGENCY_PRIORITY[a.urgency?.toLowerCase() ?? ""] ?? 0;
+      const bVal = URGENCY_PRIORITY[b.urgency?.toLowerCase() ?? ""] ?? 0;
+      return bVal - aVal;
+    });
+  }, [milestone.deadlines]);
   const ds = milestone.deadline_summary;
 
   return (
@@ -900,7 +887,7 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {deadlines.map((dl, idx) => {
-                  const urgency = vdGetUrgency(dl.date_raw);
+                  const urgency = dl.urgency ?? "";
                   return (
                     <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
                       {/* Description + inline urgency dot — flex row for alignment */}
@@ -908,10 +895,7 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
                         <div className="flex flex-row items-center gap-2">
                           <span
                             className={`inline-block h-2 w-2 rounded-full flex-shrink-0 ${
-                              urgency === "critical" ? "bg-red-500"
-                              : urgency === "standard" ? "bg-amber-400"
-                              : urgency === "future" ? "bg-blue-500"
-                              : "bg-gray-400"
+                              urgency ? vdDotColor(urgency) : "bg-gray-400"
                             }`}
                           />
                           <span className="text-gray-700 text-xs leading-relaxed">
@@ -921,15 +905,17 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
                       </td>
                       {/* Deadline date */}
                       <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
-                        {dl.date_raw || "—"}
+                        {formatStandardDate(dl.date_raw) || "—"}
                       </td>
                       {/* Urgency badge — centred, perfectly inline */}
                       <td className="px-4 py-3">
                         <div className="flex flex-row items-center justify-center">
                           <span
-                            className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-full border ${vdBadgeClasses(urgency)}`}
+                            className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-full border ${
+                              urgency ? vdBadgeClasses(urgency) : "bg-gray-100 text-gray-500 border-gray-200"
+                            }`}
                           >
-                            {vdBadgeLabel(urgency)}
+                            {urgency || "—"}
                           </span>
                         </div>
                       </td>
