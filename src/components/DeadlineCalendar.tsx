@@ -188,7 +188,6 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
   const {
     deadlineMap,
     serverToday,
-    totalInWindow,
     isLoading: isTimeframeLoading,
     isFetching: isTimeframeFetching,
     error: timeframeError,
@@ -209,7 +208,7 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
   }, [deadlineMap, selectedMonth]);
 
   // ── Counts for badges (visible month only) ────────────────────────────────
-  const { upcomingCount, overdueCount } = useMemo(() => {
+  const { upcomingCount } = useMemo(() => {
     let upcoming = 0;
     let overdue = 0;
     for (const dayData of Object.values(visibleMonthMap)) {
