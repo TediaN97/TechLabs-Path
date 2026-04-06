@@ -866,7 +866,7 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
         ) : (
           <div className="overflow-auto flex-1">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
+              <thead className="top-0 z-10">
                 <tr className="bg-[#6556d2]/5 border-b border-[#6556d2]/20">
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider">
                     Description
