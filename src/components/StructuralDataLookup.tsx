@@ -1138,6 +1138,16 @@ function AiAnalyzedModal({
 
 // ── Important Info Modal ──────────────────────────────────────────────────────
 
+/** Detect ISO-like date strings (YYYY-MM-DD with optional time) and format as MM/DD/YYYY */
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T|\s|$)/;
+function formatImportantInfoValue(value: string): string {
+  if (ISO_DATE_RE.test(value.trim())) {
+    const formatted = formatDateOnly(value);
+    if (formatted !== "-") return formatted;
+  }
+  return value;
+}
+
 /** IDs / technical keys hidden from the data grid */
 const HIDDEN_KEYS = new Set(["id", "created_at", "updated_at", "document_id", "document_name"]);
 
@@ -1320,7 +1330,7 @@ function ImportantInfoModal({
                             </span>
                           </div>
                         ) : stringVal ? (
-                          <p className="mt-1 text-sm text-gray-700 leading-relaxed">{stringVal}</p>
+                          <p className="mt-1 text-sm text-gray-700 leading-relaxed">{formatImportantInfoValue(stringVal)}</p>
                         ) : (
                           <p className="mt-1 text-sm text-gray-400">&mdash;</p>
                         )}

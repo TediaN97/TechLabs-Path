@@ -587,17 +587,105 @@ async function fetchTriggers(): Promise<Trigger[] | null> {
 }
 
 /**
+ * Convert 12-hour AM/PM time string to 24-hour HH:MM format.
+ * e.g. "02:30 PM" → "14:30", "12:00 AM" → "00:00", "12:30 PM" → "12:30"
+ */
+function to24h(time12: string): string {
+  const m = time12.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!m) return time12; // fallback: return as-is
+  let h = parseInt(m[1], 10);
+  const min = m[2];
+  const period = m[3].toUpperCase();
+  if (period === "AM" && h === 12) h = 0;
+  else if (period === "PM" && h !== 12) h += 12;
+  return `${String(h).padStart(2, "0")}:${min}`;
+}
+
+/**
+ * Map weekday name → numeric string for the backend run_day field.
+ * Sunday = "0", Monday = "1", …, Saturday = "6"
+ */
+const WEEKDAY_TO_NUM: Record<string, string> = {
+  sunday: "0",
+  monday: "1",
+  tuesday: "2",
+  wednesday: "3",
+  thursday: "4",
+  friday: "5",
+  saturday: "6",
+};
+
+/**
+ * Build run_day / run_date based STRICTLY on frequency.
+ *
+ *  weekly  → run_day = mapped number,  run_date = null
+ *  monthly → run_day = null,           run_date = day-of-month string
+ *  other   → run_day = null,           run_date = null
+ */
+function buildRunFields(
+  frequency: string,
+  dayOfWeek: string | undefined,
+  dayOfMonth: string | undefined
+): { run_day: string | null; run_date: string | null } {
+  if (frequency === "weekly") {
+    return {
+      run_day: WEEKDAY_TO_NUM[(dayOfWeek || "monday").toLowerCase()] ?? "1",
+      run_date: null,
+    };
+  }
+  if (frequency === "monthly") {
+    return {
+      run_day: null,
+      run_date: String(dayOfMonth || "1"),
+    };
+  }
+  // daily / hourly — neither field applies
+  return { run_day: null, run_date: null };
+}
+
+/**
  * PATCH a trigger (edit fields).
+ *
+ * Backend expects: { id, frequency, run_time, run_day, run_date,
+ *                    recipient_email, label, status, scheduled_end }
+ *
+ * The UI form works with `time` (AM/PM), `day_of_week`, `day_of_month`.
+ * This function transforms them into the backend's expected field names
+ * and enforces mutual exclusivity of run_day / run_date.
  */
 async function patchTrigger(
   id: string,
   fields: Partial<Pick<Trigger, "frequency" | "recipient_email" | "scheduled_end" | "label" | "status" | "prompt" | "time" | "day_of_week" | "day_of_month">>
 ): Promise<boolean> {
   try {
+    const freq = fields.frequency || "daily";
+
+    // Strictly derive run_day / run_date from frequency
+    const { run_day, run_date } = buildRunFields(
+      freq,
+      fields.day_of_week,
+      fields.day_of_month
+    );
+
+    // Convert AM/PM time → 24-hour HH:MM
+    const run_time = fields.time ? to24h(fields.time) : null;
+
+    const payload = {
+      id,
+      frequency: freq,
+      run_time,
+      run_day,
+      run_date,
+      recipient_email: fields.recipient_email ?? null,
+      label: fields.label ?? null,
+      status: fields.status ?? null,
+      scheduled_end: fields.scheduled_end || null,
+    };
+
     const res = await fetch(TRIGGERS_URL, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, ...fields }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) return false;
     const text = await res.text();
