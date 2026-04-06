@@ -104,7 +104,14 @@ function LoginScreen() {
         </div>
 
         <div className="text-center">
-          <h2 className="text-lg font-bold text-gray-800">Covenant AI</h2>
+          <h2 className="flex items-center justify-center gap-2 text-lg font-bold text-gray-800">
+            <img 
+              src="/CovenantAILogo.png" 
+              alt="Covenant AI" 
+              className="h-8 w-8 object-contain"
+            />
+            Covenant AI
+          </h2>
           <p className="text-sm text-gray-500 mt-1">
             Sign in with Microsoft to continue
           </p>
