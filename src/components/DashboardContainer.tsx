@@ -826,6 +826,12 @@ export default function DashboardContainer() {
   const agent = useAgent();
   const isLoading = agent.isProcessing || agent.isExporting || agent.isUploading;
 
+  // Unique document file names for @mention autocomplete
+  const documentNames = useMemo(
+    () => [...new Set(agent.data.map((m) => m.file_name).filter(Boolean))],
+    [agent.data]
+  );
+
   // ── Logout menu state ─────────────────────────────────────────────────────
   const [showLogoutMenu, setShowLogoutMenu] = useState(false);
   const logoutBtnRef = useRef<HTMLButtonElement>(null);
@@ -969,6 +975,7 @@ export default function DashboardContainer() {
               reloadFileName={agent.reloadMode.fileName}
               onCancelReload={handleCancelReload}
               onClearChat={handleClearChat}
+              documentNames={documentNames}
             />
             <StructuralDataLookup
               data={agent.data}
