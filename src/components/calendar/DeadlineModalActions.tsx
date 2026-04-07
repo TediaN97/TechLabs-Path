@@ -65,14 +65,14 @@ export default function DeadlineModalActions({
   onAction,
 }: DeadlineModalActionsProps) {
   // Modal-scoped deadline mode — shared across all documents in this modal
-  const [deadlineMode, setDeadlineMode] = useState<DeadlineModeType>("vectorized");
+  const [deadlineMode, setDeadlineMode] = useState<DeadlineModeType>("aiExtractedDates");
 
   // Bridge mode change → action call
   const handleModeChange = useCallback(
     (mode: DeadlineModeType, fileName: string) => {
       setDeadlineMode(mode);
       const actionType: CalendarActionType =
-        mode === "aiAnalyzed" ? "aiDeadlines" : "vectorDeadlines";
+        mode === "keyDates" ? "aiDeadlines" : "vectorDeadlines";
       onAction(actionType, fileName);
     },
     [onAction]

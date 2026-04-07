@@ -201,6 +201,7 @@ function LoadingScreen() {
  * Exported so other guards can reuse it.
  */
 function forceLogout(instance: ReturnType<typeof useMsal>["instance"]): void {
+  try { sessionStorage.removeItem("techpath_session_id"); } catch { /* ignore */ }
   const doRedirect = () => {
     window.location.href = BASE_URL;
   };

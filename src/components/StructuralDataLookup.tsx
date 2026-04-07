@@ -90,6 +90,27 @@ function SearchIcon() {
   );
 }
 
+function ExpandIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <polyline points="15 3 21 3 21 9" />
+      <polyline points="9 21 3 21 3 15" />
+      <line x1="21" y1="3" x2="14" y2="10" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </svg>
+  );
+}
+
+function MinimizeIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <polyline points="4 14 10 14 10 20" />
+      <polyline points="20 10 14 10 14 4" />
+      <line x1="14" y1="10" x2="21" y2="3" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </svg>
+  );
+}
 
 // ── Row Action Icons ───────────────────────────────────────────────────────────
 
@@ -241,13 +262,13 @@ function DeadlinesDropdown({
               onClick={() => { onAiDeadlines(); setOpen(false); }}
               className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#6556d2]/10 hover:text-[#6556d2] transition-colors cursor-pointer"
             >
-              AI analyzed
+              Key Dates
             </button>
             <button
               onClick={() => { onVectorDeadlines(); setOpen(false); }}
               className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-[#6556d2]/10 hover:text-[#6556d2] transition-colors cursor-pointer"
             >
-              Vectorized
+              AI Extracted Dates
             </button>
           </div>,
           document.body
@@ -768,7 +789,7 @@ function StructureDetailModal({
   );
 }
 
-// ── Vectorized Deadlines – urgency helpers (self-contained) ──────────────────
+// ── AI Extracted Dates – urgency helpers (self-contained) ──────────────────
 
 /**
  * Badge styling based on backend-provided urgency value.
@@ -797,7 +818,7 @@ function vdDotColor(u: string): string {
   }
 }
 
-// ── Vectorized Deadlines Table Modal ──────────────────────────────────────────
+// ── AI Extracted Dates Table Modal ──────────────────────────────────────────
 
 const URGENCY_PRIORITY: Record<string, number> = {
   critical: 5,
@@ -827,7 +848,7 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
         <div className="px-6 py-4 bg-[#6556d2] flex items-center justify-between flex-shrink-0">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
-              <h3 className="text-sm font-semibold text-white">Vectorized Deadlines</h3>
+              <h3 className="text-sm font-semibold text-white">AI Extracted Dates</h3>
               {ds && ds.total > 0 && (
                 <div className="flex items-center gap-1.5">
                   <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-white/20 text-white">
@@ -861,7 +882,7 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
         {/* Content */}
         {deadlines.length === 0 ? (
           <div className="px-5 py-12 text-center">
-            <p className="text-sm text-gray-400">No vectorized deadlines found for this document.</p>
+            <p className="text-sm text-gray-400">No AI extracted dates found for this document.</p>
           </div>
         ) : (
           <div className="overflow-auto flex-1">
@@ -962,7 +983,7 @@ function AiDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClos
   const rawLower = milestone.raw_status.toLowerCase();
   let riskLevel: "Low" | "Medium" | "High";
   let riskColor: string;
-  if (rawLower === "vectorized") {
+  if (rawLower === "aiExtractedDates") {
     riskLevel = "Low";
     riskColor = "text-green-600 bg-green-50 border-green-200";
   } else if (rawLower === "error" || rawLower === "failed" || diffDays < 0) {
@@ -990,8 +1011,8 @@ function AiDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClos
               ? "This document requires immediate attention. Review processing errors and consider re-uploading."
               : riskLevel === "Medium"
                 ? "This document is currently being processed. Monitor progress and ensure pipeline completion."
-                : rawLower === "vectorized"
-                  ? "This document has been successfully vectorized. No further action required."
+                : rawLower === "aiExtractedDates"
+                  ? "This document has been successfully AI extracted dates. No further action required."
                   : "This document status is nominal. Monitor periodically during the next refresh cycle."}
           </p>
         </div>
@@ -1004,7 +1025,7 @@ function AiDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClos
                 <li>Notify compliance team of document issue</li>
                 <li>Prepare status report for {milestone.lender !== "-" ? milestone.lender : "lender"} review</li>
               </>
-            ) : rawLower === "vectorized" ? (
+            ) : rawLower === "aiExtractedDates" ? (
               <>
                 <li>Archive completion documentation</li>
                 <li>Update compliance dashboard</li>
@@ -1023,9 +1044,9 @@ function AiDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; onClos
   );
 }
 
-// ── AI Analyzed Deadlines Modal ──────────────────────────────────────────────
+// ── Key Dates Modal ──────────────────────────────────────────────
 
-function AiAnalyzedModal({
+function KeyDatesModal({
   milestone,
   data,
   isLoading,
@@ -1048,9 +1069,9 @@ function AiAnalyzedModal({
 
   const dateRows: { label: string; value: string | null }[] = data
     ? [
-        { label: "Effective Date", value: formatDateDDMMYYYY(data.effective_date) },
-        { label: "Maturity Date", value: formatDateDDMMYYYY(data.maturity_date) },
-        { label: "Construction Completion Deadline", value: formatDateDDMMYYYY(data.construction_completion_deadline) },
+        { label: "Effective Date", value: data.effective_date || null },
+        { label: "Maturity Date", value: data.maturity_date || null },
+        { label: "Construction Completion Deadline", value: data.construction_completion_deadline || null },
       ]
     : [];
 
@@ -1063,7 +1084,7 @@ function AiAnalyzedModal({
         {/* Header */}
         <div className="px-6 py-4 bg-[#6556d2] flex items-center justify-between flex-shrink-0">
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-white">AI Analyzed Deadlines</h3>
+            <h3 className="text-sm font-semibold text-white">Key Dates</h3>
             <p className="text-[11px] text-white/70 mt-0.5 truncate" title={milestone.file_name}>
               {milestone.file_name}
             </p>
@@ -1499,6 +1520,7 @@ export default function StructuralDataLookup({
   calendarAction = null,
   onCalendarActionHandled,
 }: StructuralDataLookupProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const [filterText, setFilterText] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [vectorMilestone, setVectorMilestone] = useState<Milestone | null>(null);
@@ -1565,18 +1587,18 @@ export default function StructuralDataLookup({
     }
   }, []);
 
-  // AI Analyzed modal state
-  const [aiAnalyzedMilestone, setAiAnalyzedMilestone] = useState<Milestone | null>(null);
-  const [aiAnalyzedData, setAiAnalyzedData] = useState<AiDeadlinesData | null>(null);
-  const [aiAnalyzedLoading, setAiAnalyzedLoading] = useState(false);
-  const [aiAnalyzedError, setAiAnalyzedError] = useState<string | null>(null);
+  // Key Dates modal state
+  const [keyDatesMilestone, setKeyDatesMilestone] = useState<Milestone | null>(null);
+  const [keyDatesData, setKeyDatesData] = useState<AiDeadlinesData | null>(null);
+  const [keyDatesLoading, setKeyDatesLoading] = useState(false);
+  const [keyDatesError, setKeyDatesError] = useState<string | null>(null);
 
-  const handleAiAnalyzed = useCallback(async (entry: Milestone) => {
+  const handleKeyDates = useCallback(async (entry: Milestone) => {
     const docId = entry.document_id || entry.id;
-    setAiAnalyzedMilestone(entry);
-    setAiAnalyzedData(null);
-    setAiAnalyzedError(null);
-    setAiAnalyzedLoading(true);
+    setKeyDatesMilestone(entry);
+    setKeyDatesData(null);
+    setKeyDatesError(null);
+    setKeyDatesLoading(true);
     try {
       const res = await fetch(
         `https://20.110.72.120.nip.io/webhook/get-deadlines/AIdeadlines/${encodeURIComponent(docId)}`
@@ -1584,11 +1606,11 @@ export default function StructuralDataLookup({
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       const payload = Array.isArray(json) ? json[0] ?? {} : json;
-      setAiAnalyzedData(payload as AiDeadlinesData);
+      setKeyDatesData(payload as AiDeadlinesData);
     } catch (err: unknown) {
-      setAiAnalyzedError(err instanceof Error ? err.message : "Unknown error");
+      setKeyDatesError(err instanceof Error ? err.message : "Unknown error");
     } finally {
-      setAiAnalyzedLoading(false);
+      setKeyDatesLoading(false);
     }
   }, []);
 
@@ -1632,14 +1654,14 @@ export default function StructuralDataLookup({
         handleImportantInfo(milestone);
         break;
       case "aiDeadlines":
-        handleAiAnalyzed(milestone);
+        handleKeyDates(milestone);
         break;
       case "vectorDeadlines":
         setVectorMilestone(milestone);
         break;
     }
     onCalendarActionHandled?.();
-  }, [calendarAction, handleDetail, handleImportantInfo, handleAiAnalyzed, onCalendarActionHandled]);
+  }, [calendarAction, handleDetail, handleImportantInfo, handleKeyDates, onCalendarActionHandled]);
 
   const handleSort = useCallback((key: SortKey) => {
     setSortConfig((prev) =>
@@ -1690,11 +1712,11 @@ export default function StructuralDataLookup({
     setCurrentPage(1);
   }, [filterText]);
 
-  return (
+  const tableContent = (
     <>
-      <div className="bg-white shadow-sm rounded-lg min-w-0">
+      <div className={isExpanded ? "bg-white flex flex-col w-full h-full min-w-0" : "bg-white shadow-sm rounded-lg min-w-0"}>
         {/* Header */}
-        <div className="px-5 py-3.5 border-b border-gray-100">
+        <div className="px-5 py-3.5 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h2 className="text-base font-semibold text-gray-800">Structural Data Lookup</h2>
@@ -1711,6 +1733,14 @@ export default function StructuralDataLookup({
               <span className="text-xs text-gray-400 font-medium">
                 {isLoading ? "Loading…" : `${filtered.length} record${filtered.length !== 1 ? "s" : ""}`}
               </span>
+              <button
+                onClick={() => setIsExpanded((v) => !v)}
+                title={isExpanded ? "Minimize" : "Enlarge"}
+                className="flex items-center gap-1 px-2 py-1.5 text-[11px] font-medium text-gray-400 hover:text-[#6556d2] hover:bg-[#6556d2]/5 rounded-md transition-colors cursor-pointer"
+              >
+                {isExpanded ? <MinimizeIcon /> : <ExpandIcon />}
+                {/* {isExpanded ? "Minimize" : ""} */}
+              </button>
             </div>
           </div>
 
@@ -1750,7 +1780,7 @@ export default function StructuralDataLookup({
         )}
 
         {/* Table */}
-        <div className="overflow-x-auto" style={{ display: isLoading && data.length === 0 ? "none" : undefined }}>
+        <div className={isExpanded ? "overflow-auto flex-1" : "overflow-x-auto"} style={{ display: isLoading && data.length === 0 ? "none" : undefined }}>
           <table className="w-full text-sm table-fixed" style={{ minWidth: "900px" }}>
             <thead>
               <tr className="border-b border-gray-100">
@@ -1862,7 +1892,7 @@ export default function StructuralDataLookup({
                           </button>
                           {/* 2. Deadlines Dropdown */}
                           <DeadlinesDropdown
-                            onAiDeadlines={() => handleAiAnalyzed(entry)}
+                            onAiDeadlines={() => handleKeyDates(entry)}
                             onVectorDeadlines={() => setVectorMilestone(entry)}
                           />
                           {/* 3. Important Info Button */}
@@ -1954,13 +1984,13 @@ export default function StructuralDataLookup({
       {aiMilestone && (
         <AiDeadlinesPanel milestone={aiMilestone} onClose={() => setAiMilestone(null)} />
       )}
-      {aiAnalyzedMilestone && (
-        <AiAnalyzedModal
-          milestone={aiAnalyzedMilestone}
-          data={aiAnalyzedData}
-          isLoading={aiAnalyzedLoading}
-          error={aiAnalyzedError}
-          onClose={() => setAiAnalyzedMilestone(null)}
+      {keyDatesMilestone && (
+        <KeyDatesModal
+          milestone={keyDatesMilestone}
+          data={keyDatesData}
+          isLoading={keyDatesLoading}
+          error={keyDatesError}
+          onClose={() => setKeyDatesMilestone(null)}
         />
       )}
       {importantInfoMilestone && (
@@ -1985,4 +2015,17 @@ export default function StructuralDataLookup({
       )}
     </>
   );
+
+  if (isExpanded) {
+    return createPortal(
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+        <div className="w-[95vw] h-[92vh] rounded-xl shadow-2xl overflow-hidden flex flex-col">
+          {tableContent}
+        </div>
+      </div>,
+      document.body
+    );
+  }
+
+  return tableContent;
 }

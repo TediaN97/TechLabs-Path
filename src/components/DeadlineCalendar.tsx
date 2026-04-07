@@ -19,8 +19,7 @@ function getDaysInMonth(year: number, month: number): number {
 }
 
 function getFirstDayOfWeek(year: number, month: number): number {
-  const day = new Date(year, month, 1).getDay();
-  return day === 0 ? 6 : day - 1; // Monday = 0
+  return new Date(year, month, 1).getDay(); // Sunday = 0
 }
 
 const MONTH_NAMES = [
@@ -28,7 +27,7 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const DAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 // ── Severity Styling ─────────────────────────────────────────────────────────
 
@@ -309,8 +308,9 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
       });
     }
 
-    // Trailing empty cells
-    while (result.length % 7 !== 0) {
+    // Trailing empty cells — always pad to 42 cells (6 rows of 7)
+    // so the calendar height stays stable across all months
+    while (result.length < 42) {
       result.push({ day: null, dateKey: "", isToday: false, dayData: null });
     }
 

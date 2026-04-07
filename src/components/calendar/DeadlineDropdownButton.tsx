@@ -23,7 +23,7 @@ import { createPortal } from "react-dom";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type DeadlineModeType = "vectorized" | "aiAnalyzed";
+export type DeadlineModeType = "aiExtractedDates" | "keyDates";
 
 interface DeadlineDropdownButtonProps {
   /** Currently selected mode */
@@ -37,8 +37,8 @@ interface DeadlineDropdownButtonProps {
 // ── Options ──────────────────────────────────────────────────────────────────
 
 const MODE_OPTIONS: { value: DeadlineModeType; label: string }[] = [
-  { value: "aiAnalyzed", label: "AI Analyzed" },
-  { value: "vectorized", label: "Vectorized" },
+  { value: "keyDates", label: "Key Dates" },
+  { value: "aiExtractedDates", label: "AI Extracted Dates" },
 ];
 
 /** Estimated height of the dropdown (2 items × ~28px + 8px padding). */

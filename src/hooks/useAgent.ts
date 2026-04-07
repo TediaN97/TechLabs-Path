@@ -116,7 +116,7 @@ interface GetAllDocumentsResponse {
 }
 
 function mapApiStatus(status: string): MilestoneStatus {
-  if (status === "vectorized") return "done";
+  if (status === "aiExtractedDates") return "done";
   if (status === "error" || status === "failed") return "overdue";
   return "pending";
 }
@@ -277,14 +277,14 @@ const SESSION_STORAGE_KEY = "techpath_session_id";
 
 function getOrCreateSessionId(): string {
   try {
-    let sessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+    let sessionId = sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (!sessionId) {
       sessionId = crypto.randomUUID();
-      localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+      sessionStorage.setItem(SESSION_STORAGE_KEY, sessionId);
     }
     return sessionId;
   } catch {
-    // localStorage may be unavailable (private browsing, quota exceeded, etc.)
+    // sessionStorage may be unavailable (private browsing, quota exceeded, etc.)
     return crypto.randomUUID();
   }
 }
@@ -682,6 +682,7 @@ async function patchTrigger(
       label: fields.label ?? null,
       status: fields.status ?? null,
       scheduled_end: fields.scheduled_end || null,
+      prompt: fields.prompt || null,
     };
 
     const res = await fetch(TRIGGERS_URL, {
@@ -1344,7 +1345,7 @@ export function useAgent() {
     setMessages([]);
     // Generate a fresh session id
     const newSessionId = crypto.randomUUID();
-    try { localStorage.setItem(SESSION_STORAGE_KEY, newSessionId); } catch { /* ignore */ }
+    try { sessionStorage.setItem(SESSION_STORAGE_KEY, newSessionId); } catch { /* ignore */ }
     // Clear reload mode
     setReloadMode({ active: false, sourceFileId: "", fileName: "" });
   }, []);

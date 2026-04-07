@@ -30,6 +30,28 @@ function SendIcon() {
   );
 }
 
+function ExpandIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <polyline points="15 3 21 3 21 9" />
+      <polyline points="9 21 3 21 3 15" />
+      <line x1="21" y1="3" x2="14" y2="10" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </svg>
+  );
+}
+
+function MinimizeIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <polyline points="4 14 10 14 10 20" />
+      <polyline points="20 10 14 10 14 4" />
+      <line x1="14" y1="10" x2="21" y2="3" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </svg>
+  );
+}
+
 // function UploadIcon() {
 //   return (
 //     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -463,7 +485,7 @@ const FEEDBACK_INTENTS = new Set(["query_only", "query_and_send"]);
 
 function getSessionId(): string {
   try {
-    return localStorage.getItem("techpath_session_id") || "";
+    return sessionStorage.getItem("techpath_session_id") || "";
   } catch {
     return "";
   }
@@ -717,7 +739,6 @@ const EXAMPLE_PROMPTS = [
   "Find missing reporting requirements",
   "Summarize key terms of this agreement",
   "Find documents with missing approvals",
-  "List contracts with events of default",
   "Check which fields are incomplete",
 ];
 
@@ -769,6 +790,7 @@ export default function ChatInterface({
   onCancelReload,
   onClearChat,
 }: ChatInterfaceProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const structuredFileRef = useRef<HTMLInputElement>(null);
@@ -895,26 +917,43 @@ export default function ChatInterface({
     }
   }
 
-  return (
-    <div className="bg-white shadow-sm rounded-lg flex flex-col" style={{ height: "460px" }}>
+  const chatContent = (
+    <div
+      className={
+        isExpanded
+          ? "bg-white flex flex-col w-full h-full"
+          : "bg-white shadow-sm rounded-lg flex flex-col"
+      }
+      style={isExpanded ? undefined : { minHeight: "460px", maxHeight: "80vh" }}
+    >
       {/* Header */}
       <div className="px-5 py-3.5 border-b border-gray-100 flex-shrink-0 flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold text-gray-800">Chat</h2>
           <p className="text-xs text-gray-400 mt-0.5">Ask questions about your documents</p>
         </div>
-        {onClearChat && messages.length > 0 && (
+        <div className="flex items-center gap-1.5">
+          {onClearChat && messages.length > 0 && (
+            <button
+              onClick={onClearChat}
+              title="Clear chat and memory"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Clear chat
+            </button>
+          )}
           <button
-            onClick={onClearChat}
-            title="Clear chat and memory"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+            onClick={() => setIsExpanded((v) => !v)}
+            title={isExpanded ? "Minimize" : "Enlarge"}
+            className="flex items-center gap-1 px-2 py-1.5 text-[11px] font-medium text-gray-400 hover:text-[#6556d2] hover:bg-[#6556d2]/5 rounded-md transition-colors cursor-pointer"
           >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            Clear chat
+            {isExpanded ? <MinimizeIcon /> : <ExpandIcon />}
+            {/* {isExpanded ? "Minimize" : ""} */}
           </button>
-        )}
+        </div>
       </div>
 
       {/* Messages area — flex-1 so it shrinks when the input bar grows */}
@@ -923,14 +962,18 @@ export default function ChatInterface({
         className="flex-1 overflow-y-auto px-5 py-4 bg-gray-50/50 min-h-0"
       >
         {messages.length === 0 && !isLoading && (
-          <div className="flex flex-col items-center justify-center h-full gap-4">
-            <p className="text-sm text-gray-400">Ask questions about your documents</p>
+          <div className="flex flex-col items-center h-full">
+            {/* Spacer pushes heading to a fixed vertical position */}
+            <div className="flex-1" />
+            <p className="text-sm text-gray-400 flex-shrink-0">Ask questions about your documents</p>
+            {/* Hints area — fixed height so heading above never shifts */}
             <div
-              className="flex flex-wrap justify-center gap-2 max-w-lg"
+              className="flex flex-wrap justify-center gap-2 max-w-lg mt-4 flex-shrink-0"
+              style={{ height: "5.5rem" }}
               onMouseEnter={() => { hoveredRef.current = true; }}
               onMouseLeave={() => { hoveredRef.current = false; }}
             >
-              {visiblePrompts.map((prompt) => (
+              {visiblePrompts.slice(0, 5).map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
@@ -941,6 +984,7 @@ export default function ChatInterface({
                 </button>
               ))}
             </div>
+            <div className="flex-1" />
           </div>
         )}
 
@@ -1079,4 +1123,17 @@ export default function ChatInterface({
       </div>
     </div>
   );
+
+  if (isExpanded) {
+    return createPortal(
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+        <div className="w-[95vw] h-[92vh] rounded-xl shadow-2xl overflow-hidden flex flex-col">
+          {chatContent}
+        </div>
+      </div>,
+      document.body
+    );
+  }
+
+  return chatContent;
 }
