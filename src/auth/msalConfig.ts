@@ -9,7 +9,7 @@ const redirectUri =
 // const POST_LOGOUT_REDIRECT =
 //   "http://localhost:5173/";
 const POST_LOGOUT_REDIRECT =
-  "https://brave-wave-004ae7a03.2.azurestaticapps.net/"
+  "https://agreeable-water-039c15a0f.2.azurestaticapps.net/"
 
 export const msalConfig: Configuration = {
   auth: {
