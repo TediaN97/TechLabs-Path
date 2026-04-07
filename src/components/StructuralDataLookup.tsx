@@ -866,7 +866,7 @@ function VectorDeadlinesPanel({ milestone, onClose }: { milestone: Milestone; on
         ) : (
           <div className="overflow-auto flex-1">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
+              <thead className="top-0 z-10">
                 <tr className="bg-[#6556d2]/5 border-b border-[#6556d2]/20">
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-[#6556d2] uppercase tracking-wider">
                     Description
@@ -1138,6 +1138,16 @@ function AiAnalyzedModal({
 
 // ── Important Info Modal ──────────────────────────────────────────────────────
 
+/** Detect ISO-like date strings (YYYY-MM-DD with optional time) and format as MM/DD/YYYY */
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T|\s|$)/;
+function formatImportantInfoValue(value: string): string {
+  if (ISO_DATE_RE.test(value.trim())) {
+    const formatted = formatDateOnly(value);
+    if (formatted !== "-") return formatted;
+  }
+  return value;
+}
+
 /** IDs / technical keys hidden from the data grid */
 const HIDDEN_KEYS = new Set(["id", "created_at", "updated_at", "document_id", "document_name"]);
 
@@ -1320,7 +1330,7 @@ function ImportantInfoModal({
                             </span>
                           </div>
                         ) : stringVal ? (
-                          <p className="mt-1 text-sm text-gray-700 leading-relaxed">{stringVal}</p>
+                          <p className="mt-1 text-sm text-gray-700 leading-relaxed">{formatImportantInfoValue(stringVal)}</p>
                         ) : (
                           <p className="mt-1 text-sm text-gray-400">&mdash;</p>
                         )}
@@ -1745,8 +1755,8 @@ export default function StructuralDataLookup({
             <thead>
               <tr className="border-b border-gray-100">
                 {([
-                  { key: "file_name" as SortKey, label: "Name", width: "w-[24%]" },
-                  { key: "upload_time" as SortKey, label: "Upload Date", width: "w-[12%]" },
+                  { key: "file_name" as SortKey, label: "Name", width: "w-[18%]" },
+                  { key: "upload_time" as SortKey, label: "Upload Date", width: "w-[13%]" },
                   { key: "lender" as SortKey, label: "StakeHolder 1", width: "w-[24%]" },
                   { key: "borrower" as SortKey, label: "StakeHolder 2", width: "w-[24%]" },
                 ] as const).map((col) => {

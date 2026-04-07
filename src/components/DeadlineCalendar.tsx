@@ -191,7 +191,6 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
     isLoading: isTimeframeLoading,
     isFetching: isTimeframeFetching,
     error: timeframeError,
-    timeframe,
   } = useCalendarTimeframe(selectedMonth, editedFile);
 
   // ── Filter deadlineMap to visible month only ────────────────────────────────
@@ -402,12 +401,10 @@ export default function DeadlineCalendar({ data, onAction, editedFile }: Deadlin
                 </div>
               )}
 
-              {/* Range indicator */}
-              {timeframe && (
-                <div className="mb-2 text-[10px] text-gray-400 text-right">
-                  {timeframe.startDate} — {timeframe.endDate}
-                </div>
-              )}
+              {/* Range indicator — visible month only */}
+              <div className="mb-2 text-[10px] text-gray-400 text-right">
+                {formatDateOnly(`${year}-${String(month + 1).padStart(2, "0")}-01`)} — {formatDateOnly(`${year}-${String(month + 1).padStart(2, "0")}-${String(getDaysInMonth(year, month)).padStart(2, "0")}`)}
+              </div>
 
               {isTimeframeLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 gap-3">
