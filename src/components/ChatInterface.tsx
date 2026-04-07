@@ -1,4 +1,5 @@
 import { type FormEvent, useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 // ── Types ───────────────────────────────────────────────────────────────────────
 
@@ -217,6 +218,7 @@ function isNumericValue(v: unknown): boolean {
 }
 
 import { formatStandardDate } from "../utils/formatDate";
+import { exportTableCsv, exportTableXlsx } from "../utils/tableExport";
 
 /** Format ISO date string to MM/DD/YYYY HH:MM:SS AM/PM */
 function formatDate(v: string): string {
@@ -254,58 +256,163 @@ function extractTableData(rawJson: unknown): TableData | null {
   return null;
 }
 
+function DownloadIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+function TableExportMenu({ data }: { data: TableData }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  // Calculate portal position when opening
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const menuWidth = 160; // min-w-[160px]
+    let left = rect.right - menuWidth;
+    // Prevent overflow on left edge
+    if (left < 4) left = 4;
+    setPos({ top: rect.bottom + 4, left });
+  }, [open]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      const target = e.target as Node;
+      if (
+        menuRef.current && !menuRef.current.contains(target) &&
+        btnRef.current && !btnRef.current.contains(target)
+      ) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  // Close on scroll (the dropdown is portaled so it won't follow)
+  useEffect(() => {
+    if (!open) return;
+    const handleScroll = () => setOpen(false);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => window.removeEventListener("scroll", handleScroll, true);
+  }, [open]);
+
+  const handleExport = (format: "csv" | "xlsx") => {
+    if (format === "csv") {
+      exportTableCsv(data.columns, data.rows);
+    } else {
+      exportTableXlsx(data.columns, data.rows);
+    }
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-[#6556d2] bg-[#f0effb] hover:bg-[#e4e2f5] rounded-md transition-colors cursor-pointer"
+        title="Export table"
+      >
+        <DownloadIcon />
+        Export
+      </button>
+      {open && pos && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999 }}
+          className="bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden min-w-[160px]"
+        >
+          <button
+            onClick={() => handleExport("csv")}
+            className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-[#f0effb] hover:text-[#6556d2] transition-colors cursor-pointer flex items-center gap-2"
+          >
+            <span className="text-[10px] font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">.csv</span>
+            Export as CSV
+          </button>
+          <button
+            onClick={() => handleExport("xlsx")}
+            className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-[#f0effb] hover:text-[#6556d2] transition-colors cursor-pointer flex items-center gap-2 border-t border-gray-100"
+          >
+            <span className="text-[10px] font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">.xlsx</span>
+            Export as Excel
+          </button>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
 function TableRenderer({ data }: { data: TableData }) {
   return (
-    <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr>
-            {data.columns.map((col) => (
-              <th
-                key={col}
-                className="px-4 py-2 text-left text-xs font-semibold text-white uppercase tracking-wider bg-[#6556d2] border-b border-[#5445b5] whitespace-nowrap"
-              >
-                {col.replace(/_/g, " ")}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {data.rows.map((row, ri) => (
-            <tr
-              key={ri}
-              className={`${
-                ri % 2 === 0 ? "bg-white" : "bg-[#f8f7ff]"
-              } hover:bg-[#eeedfa] transition-colors`}
-            >
-              {row.map((cell, ci) => {
-                const formatted = formatCell(cell);
-                const numeric = isNumericValue(cell);
-                return (
-                  <td
-                    key={ci}
-                    className={`px-4 py-2 border-b border-slate-100 whitespace-nowrap ${
-                      numeric ? "text-right tabular-nums" : ""
-                    }`}
-                  >
-                    {formatted}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-          {data.rows.length === 0 && (
+    <div className="mt-2">
+      {/* Export button — top-right aligned above table */}
+      <div className="flex justify-end mb-1">
+        <TableExportMenu data={data} />
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
+        <table className="w-full text-sm border-collapse">
+          <thead>
             <tr>
-              <td
-                colSpan={data.columns.length}
-                className="px-4 py-4 text-center text-gray-400 italic"
-              >
-                No data rows returned.
-              </td>
+              {data.columns.map((col) => (
+                <th
+                  key={col}
+                  className="px-4 py-2 text-left text-xs font-semibold text-white uppercase tracking-wider bg-[#6556d2] border-b border-[#5445b5] whitespace-nowrap"
+                >
+                  {col.replace(/_/g, " ")}
+                </th>
+              ))}
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {data.rows.map((row, ri) => (
+              <tr
+                key={ri}
+                className={`${
+                  ri % 2 === 0 ? "bg-white" : "bg-[#f8f7ff]"
+                } hover:bg-[#eeedfa] transition-colors`}
+              >
+                {row.map((cell, ci) => {
+                  const formatted = formatCell(cell);
+                  const numeric = isNumericValue(cell);
+                  return (
+                    <td
+                      key={ci}
+                      className={`px-4 py-2 border-b border-slate-100 whitespace-nowrap ${
+                        numeric ? "text-right tabular-nums" : ""
+                      }`}
+                    >
+                      {formatted}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            {data.rows.length === 0 && (
+              <tr>
+                <td
+                  colSpan={data.columns.length}
+                  className="px-4 py-4 text-center text-gray-400 italic"
+                >
+                  No data rows returned.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -798,11 +905,7 @@ export default function ChatInterface({
         </div>
         {onClearChat && messages.length > 0 && (
           <button
-            onClick={() => {
-              if (window.confirm("Are you sure you want to clear the chat and reset memory?")) {
-                onClearChat();
-              }
-            }}
+            onClick={onClearChat}
             title="Clear chat and memory"
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
           >
