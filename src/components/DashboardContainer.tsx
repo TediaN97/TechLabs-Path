@@ -749,7 +749,6 @@ function LogoutMenu({
 
   /** App-only: clear MSAL local state without triggering Microsoft global sign-out */
   const handleAppLogout = useCallback(async () => {
-    try { sessionStorage.removeItem("techpath_session_id"); } catch { /* ignore */ }
     try {
       await instance.clearCache();
     } catch {
@@ -760,7 +759,6 @@ function LogoutMenu({
 
   /** Full Microsoft logout via MSAL redirect */
   const handleMicrosoftLogout = useCallback(() => {
-    try { sessionStorage.removeItem("techpath_session_id"); } catch { /* ignore */ }
     instance.logoutRedirect({
       postLogoutRedirectUri: FULL_LOGOUT_REDIRECT,
     });

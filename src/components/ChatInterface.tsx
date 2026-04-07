@@ -1,4 +1,4 @@
-import { type FormEvent, useState, useRef, useEffect, useCallback } from "react";
+import { type FormEvent, useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 
 // ── Types ───────────────────────────────────────────────────────────────────────
@@ -774,6 +774,36 @@ interface ChatInterfaceProps {
   onCancelReload?: () => void;
   /** Called to clear all chat messages and reset session memory */
   onClearChat?: () => void;
+  /** Document file names available for @mention autocomplete */
+  documentNames?: string[];
+}
+
+// ── @mention helpers ──────────────────────────────────────────────────────────
+
+const MAX_MENTION_SUGGESTIONS = 8;
+
+/**
+ * Detect the @mention token at the current cursor position.
+ * Returns { query, start, end } where start/end are character indices
+ * of the full @token (including the @).
+ */
+function detectMentionQuery(
+  text: string,
+  cursorPos: number
+): { query: string; start: number; end: number } | null {
+  // Walk backwards from cursor to find the @
+  const before = text.slice(0, cursorPos);
+  const atIdx = before.lastIndexOf("@");
+  if (atIdx === -1) return null;
+
+  // The @ must be at the start of input or preceded by whitespace
+  if (atIdx > 0 && !/\s/.test(before[atIdx - 1])) return null;
+
+  const query = before.slice(atIdx + 1); // text after @
+
+  // Don't trigger if there's a space in the query — user has moved on
+  // Actually, file names can have spaces, so allow spaces in query
+  return { query, start: atIdx, end: cursorPos };
 }
 
 export default function ChatInterface({
@@ -789,9 +819,51 @@ export default function ChatInterface({
   reloadFileName = "",
   onCancelReload,
   onClearChat,
+  documentNames = [],
 }: ChatInterfaceProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── @mention autocomplete state ──
+  const [mentionQuery, setMentionQuery] = useState<{ query: string; start: number; end: number } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const mentionRef = useRef<HTMLDivElement>(null);
+
+  const mentionSuggestions = useMemo(() => {
+    if (!mentionQuery || mentionQuery.query.length === 0) return [];
+    const q = mentionQuery.query.toLowerCase();
+    return documentNames
+      .filter((name) => name.toLowerCase().startsWith(q))
+      .slice(0, MAX_MENTION_SUGGESTIONS);
+  }, [mentionQuery, documentNames]);
+
+  // Reset index when suggestions change
+  useEffect(() => {
+    setMentionIndex(0);
+  }, [mentionSuggestions]);
+
+  function updateMentionState() {
+    const ta = textareaRef.current;
+    if (!ta) { setMentionQuery(null); return; }
+    const result = detectMentionQuery(ta.value, ta.selectionStart ?? ta.value.length);
+    setMentionQuery(result);
+  }
+
+  function insertMention(fileName: string) {
+    const ta = textareaRef.current;
+    if (!ta || !mentionQuery) return;
+    const before = ta.value.slice(0, mentionQuery.start);
+    const after = ta.value.slice(mentionQuery.end);
+    const inserted = `@${fileName} `;
+    const newValue = before + inserted + after;
+    ta.value = newValue;
+    inputValueRef.current = newValue;
+    const newCursor = before.length + inserted.length;
+    ta.setSelectionRange(newCursor, newCursor);
+    ta.focus();
+    setMentionQuery(null);
+    resizeTextarea();
+  }
   const fileRef = useRef<HTMLInputElement>(null);
   const structuredFileRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -889,6 +961,30 @@ export default function ChatInterface({
 
   // ── Key handler: Enter = send, Shift+Enter = newline ───────────────────────
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // @mention dropdown keyboard navigation
+    if (mentionSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionIndex((i) => (i + 1) % mentionSuggestions.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIndex((i) => (i - 1 + mentionSuggestions.length) % mentionSuggestions.length);
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        insertMention(mentionSuggestions[mentionIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionQuery(null);
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
@@ -1095,20 +1191,51 @@ export default function ChatInterface({
             Add Export Template
           </button>
 
-          {/* Auto-expanding textarea */}
-          <textarea
-            ref={textareaRef}
-            rows={1}
-            placeholder={structuredFile ? "Ask about your data file…" : "Type a message…"}
-            onChange={(e) => {
-              inputValueRef.current = e.target.value;
-              resizeTextarea();
-            }}
-            onKeyDown={handleKeyDown}
-            disabled={isLoading || isUploading}
-            className="flex-1 px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-2xl bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2] transition-colors disabled:opacity-50 resize-none leading-relaxed"
-            style={{ caretColor: "black", overflowY: "hidden" }}
-          />
+          {/* Auto-expanding textarea with @mention dropdown */}
+          <div className="flex-1 relative">
+            <textarea
+              ref={textareaRef}
+              rows={1}
+              placeholder={structuredFile ? "Ask about your data file…" : "Type a message…"}
+              onChange={(e) => {
+                inputValueRef.current = e.target.value;
+                resizeTextarea();
+                updateMentionState();
+              }}
+              onClick={updateMentionState}
+              onKeyDown={handleKeyDown}
+              disabled={isLoading || isUploading}
+              className="w-full px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-2xl bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#6556d2]/40 focus:border-[#6556d2] transition-colors disabled:opacity-50 resize-none leading-relaxed"
+              style={{ caretColor: "black", overflowY: "hidden" }}
+            />
+
+            {/* @mention suggestions dropdown */}
+            {mentionSuggestions.length > 0 && (
+              <div
+                ref={mentionRef}
+                className="absolute bottom-full left-0 mb-1 w-full max-h-52 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg z-50"
+              >
+                {mentionSuggestions.map((name, i) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault(); // prevent textarea blur
+                      insertMention(name);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-sm truncate cursor-pointer transition-colors ${
+                      i === mentionIndex
+                        ? "bg-[#6556d2]/10 text-[#6556d2]"
+                        : "text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    <span className="text-gray-400 mr-1">@</span>
+                    {name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Send button — pinned to bottom of the row */}
           <button
