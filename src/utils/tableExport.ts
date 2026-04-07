@@ -1,4 +1,10 @@
-import * as XLSX from "xlsx";
+import XLSX from "xlsx-js-style";
+
+/**
+ * Header purple from the chat table: bg-[#6556d2]
+ * Converted to ARGB for xlsx-js-style (AARRGGBB).
+ */
+const HEADER_FILL_ARGB = "FF6556D2";
 
 /**
  * Generate a timestamp string for filenames: YYYY-MM-DD-HH-mm
@@ -52,11 +58,31 @@ export function exportTableCsv(columns: string[], rows: unknown[][]): void {
 }
 
 /**
+ * Style object applied to every header cell in the XLSX export.
+ * Matches the chat table header: purple bg (#6556d2), white bold text.
+ */
+const HEADER_STYLE: XLSX.CellStyle = {
+  fill: { fgColor: { rgb: HEADER_FILL_ARGB } },
+  font: { bold: true, color: { rgb: "FFFFFFFF" } },
+  alignment: { vertical: "center" },
+};
+
+/**
  * Export table data as an XLSX file download.
+ * Header row is styled to match the chat table's purple header.
  */
 export function exportTableXlsx(columns: string[], rows: unknown[][]): void {
   const wsData = [columns, ...rows];
   const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  // Apply header style to each cell in row 1
+  for (let c = 0; c < columns.length; c++) {
+    const cellRef = XLSX.utils.encode_cell({ r: 0, c });
+    if (ws[cellRef]) {
+      ws[cellRef].s = HEADER_STYLE;
+    }
+  }
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Export");
   const wbOut = XLSX.write(wb, { bookType: "xlsx", type: "array" });

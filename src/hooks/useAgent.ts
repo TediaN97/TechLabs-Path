@@ -254,6 +254,8 @@ export const CALENDAR_TIMEFRAME_URL =
   "https://20.110.72.120.nip.io/webhook/calendar/timeframe";
 
 const REFRESH_INTERVAL_MS = 30_000;
+const TRIGGER_REFRESH_INTERVAL_MS = 5_000;
+
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -1038,7 +1040,7 @@ export function useAgent() {
     refreshTriggers();
     triggersTimerRef.current = setInterval(() => {
       refreshTriggers();
-    }, REFRESH_INTERVAL_MS);
+    }, TRIGGER_REFRESH_INTERVAL_MS);
     return () => {
       if (triggersTimerRef.current) clearInterval(triggersTimerRef.current);
     };
