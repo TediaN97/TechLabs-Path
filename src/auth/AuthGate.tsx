@@ -8,7 +8,7 @@ import {
   InteractionStatus,
   InteractionRequiredAuthError,
 } from "@azure/msal-browser";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { loginRequest, isAuthConfigValid } from "./msalConfig";
 
 const BASE_URL = "https://agreeable-water-039c15a0f.2.azurestaticapps.net/";
@@ -197,6 +197,21 @@ function LoadingScreen() {
 }
 
 /**
+ * Redirect to the public landing page after clearing stale auth state.
+ * Exported so other guards can reuse it.
+ */
+function forceLogout(instance: ReturnType<typeof useMsal>["instance"]): void {
+  const doRedirect = () => {
+    window.location.href = BASE_URL;
+  };
+  try {
+    instance.clearCache().then(doRedirect).catch(doRedirect);
+  } catch {
+    doRedirect();
+  }
+}
+
+/**
  * Wrapper that silently acquires a token on mount.
  * If the token is expired / session invalid, clears stale state and
  * redirects to the base page.
@@ -207,20 +222,42 @@ function SessionGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     try {
       const account = instance.getActiveAccount();
-      if (!account) return;
+      if (!account) {
+        // Authenticated template rendered but no active account — force logout
+        console.warn("[SessionGuard] No active account — forcing logout");
+        forceLogout(instance);
+        return;
+      }
 
-      instance.acquireTokenSilent({ ...loginRequest, account }).catch((err) => {
-        if (err instanceof InteractionRequiredAuthError) {
-          // Session expired — clear cache and redirect out
-          instance.clearCache().then(() => {
-            window.location.href = BASE_URL;
-          }).catch(() => {
-            window.location.href = BASE_URL;
-          });
-        }
-      });
+      instance
+        .acquireTokenSilent({ ...loginRequest, account })
+        .catch((err) => {
+          const msg =
+            err instanceof Error ? err.message : String(err);
+          const isFatal =
+            err instanceof InteractionRequiredAuthError ||
+            msg.includes("login_required") ||
+            msg.includes("invalid_grant") ||
+            msg.includes("interaction_required") ||
+            msg.includes("AADSTS");
+
+          if (isFatal) {
+            console.warn(
+              "[SessionGuard] Token acquisition failed — redirecting:",
+              msg
+            );
+            forceLogout(instance);
+          } else {
+            // Transient error (network etc.) — log but don't force logout
+            console.error(
+              "[SessionGuard] Token acquisition error (transient):",
+              msg
+            );
+          }
+        });
     } catch (err) {
-      console.error("[SessionGuard] Error checking token:", err);
+      console.error("[SessionGuard] Unexpected error:", err);
+      forceLogout(instance);
     }
   }, [instance]);
 
@@ -234,33 +271,40 @@ export default function AuthGate({
 }) {
   const { instance, inProgress } = useMsal();
   const isAuthenticated = useIsAuthenticated();
+  const [redirecting, setRedirecting] = useState(false);
+  const handledRef = useRef(false);
+
+  // Detect stale cached accounts: MSAL is idle, not authenticated, but
+  // accounts still exist in cache → session expired. Clear & redirect.
+  useEffect(() => {
+    if (handledRef.current || redirecting) return;
+    if (
+      inProgress !== InteractionStatus.None ||
+      isAuthenticated
+    )
+      return;
+
+    let hasStale = false;
+    try {
+      hasStale = instance.getAllAccounts().length > 0;
+    } catch (err) {
+      console.error("[AuthGate] Error reading accounts:", err);
+    }
+
+    if (hasStale) {
+      handledRef.current = true;
+      setRedirecting(true);
+      console.warn("[AuthGate] Stale accounts detected — redirecting");
+      forceLogout(instance);
+    }
+  }, [instance, inProgress, isAuthenticated, redirecting]);
 
   // While MSAL is handling a redirect or initializing, show loading
   if (
+    redirecting ||
     inProgress === InteractionStatus.HandleRedirect ||
     inProgress === InteractionStatus.Startup
   ) {
-    return <LoadingScreen />;
-  }
-
-  // If MSAL is idle but there are stale cached accounts while unauthenticated,
-  // the session has expired — clear and redirect to base page.
-  let hasStaleAccounts = false;
-  try {
-    hasStaleAccounts =
-      !isAuthenticated &&
-      inProgress === InteractionStatus.None &&
-      instance.getAllAccounts().length > 0;
-  } catch (err) {
-    console.error("[AuthGate] Error reading accounts:", err);
-  }
-
-  if (hasStaleAccounts) {
-    instance.clearCache().then(() => {
-      window.location.href = BASE_URL;
-    }).catch(() => {
-      window.location.href = BASE_URL;
-    });
     return <LoadingScreen />;
   }
 
